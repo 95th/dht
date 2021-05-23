@@ -1,0 +1,17 @@
+[package]
+name = "dht"
+version = "0.1.0"
+authors = ["Gurwinder Singh <vargwin@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+data-encoding = "2.3.1"
+tokio = { version = "1.1.0", features = ["io-util", "net", "macros", "time", "rt"] }
+futures = "0.3.12"
+rand = "0.8.2"
+log = { version = "0.4.13", features = ["release_max_level_off"] }
+env_logger = "0.8.2"
+ben = "0.2.0"
+byteorder = "1.4.2"
+anyhow = "1.0.38"
+bitflags = "1.2.1"
