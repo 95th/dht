@@ -1,53 +1,48 @@
 use crate::contact::ContactRef;
-use crate::server::request::{DhtNode, Status};
-use crate::server::RpcMgr;
 use crate::id::NodeId;
 use crate::msg::recv::Response;
 use crate::msg::send::Ping;
 use crate::msg::TxnId;
+use crate::server::request::{DhtNode, Status};
+use crate::server::RpcMgr;
 use crate::table::RoutingTable;
+use ben::Encode;
 use std::net::SocketAddr;
-use std::time::{Duration, Instant};
+use tokio::net::UdpSocket;
 
-pub struct PingRequest {
-    own_id: NodeId,
+pub struct DhtPing {
     node: DhtNode,
     txn_id: TxnId,
-    sent: Instant,
     done: bool,
 }
 
-impl PingRequest {
-    pub(super) fn new(own_id: &NodeId, id: &NodeId, addr: &SocketAddr) -> Self {
+impl DhtPing {
+    pub fn new(id: &NodeId, addr: &SocketAddr) -> Self {
         Self {
-            own_id: *own_id,
             node: DhtNode {
                 id: *id,
                 addr: *addr,
                 status: Status::INITIAL,
             },
             txn_id: TxnId(0),
-            sent: Instant::now(),
             done: false,
         }
     }
 
-    pub fn prune(&mut self, table: &mut RoutingTable) {
-        log::trace!("Prune PING request");
-        if !self.done && self.sent < Instant::now() - Duration::from_secs(10) {
-            table.failed(&self.node.id);
-            self.done = true;
+    pub fn failed(&mut self, id: &NodeId) {
+        if &self.node.id == id {
+            self.node.status.insert(Status::FAILED);
         }
     }
 
-    pub fn handle_reply(
+    pub fn handle_response(
         &mut self,
         resp: &Response,
         addr: &SocketAddr,
         table: &mut RoutingTable,
-    ) -> bool {
+    ) {
         if self.txn_id != resp.txn_id {
-            return false;
+            return;
         }
 
         log::trace!("Handle PING response");
@@ -62,21 +57,28 @@ impl PingRequest {
         }
 
         self.done = true;
-        true
     }
 
-    pub async fn invoke(&mut self, rpc: &mut RpcMgr) -> bool {
+    pub async fn add_requests(
+        &mut self,
+        rpc: &mut RpcMgr,
+        udp: &UdpSocket,
+        buf: &mut Vec<u8>,
+    ) -> bool {
         log::trace!("Invoke PING request");
         if self.done {
             return true;
         }
 
         let msg = Ping {
-            id: &self.own_id,
-            txn_id: rpc.next_id(),
+            txn_id: rpc.new_txn(),
+            id: &rpc.own_id,
         };
 
-        match rpc.send(&msg, &self.node.addr).await {
+        buf.clear();
+        msg.encode(buf);
+
+        match udp.send_to(&buf, &self.node.addr).await {
             Ok(_) => {
                 self.node.status.insert(Status::QUERIED);
                 self.txn_id = msg.txn_id;

@@ -6,13 +6,13 @@ use tokio::net::UdpSocket;
 mod announce;
 mod bootstrap;
 mod get_peers;
+mod ping;
 mod traversal;
-// mod ping;
 
 pub use announce::DhtAnnounce;
 pub use bootstrap::DhtBootstrap;
-// pub use ping::PingRequest;
 pub use get_peers::DhtGetPeers;
+pub use ping::DhtPing;
 
 use super::rpc::RpcMgr;
 
@@ -20,6 +20,7 @@ pub enum DhtTraversal {
     GetPeers(DhtGetPeers),
     Bootstrap(DhtBootstrap),
     Announce(DhtAnnounce),
+    Ping(DhtPing),
 }
 
 impl DhtTraversal {
@@ -34,6 +35,7 @@ impl DhtTraversal {
             DhtTraversal::GetPeers(x) => x.add_requests(rpc, udp, buf, traversal_id).await,
             DhtTraversal::Bootstrap(x) => x.add_requests(rpc, udp, buf, traversal_id).await,
             DhtTraversal::Announce(x) => x.add_requests(rpc, udp, buf, traversal_id).await,
+            DhtTraversal::Ping(x) => x.add_requests(rpc, udp, buf).await,
         }
     }
 
@@ -42,6 +44,7 @@ impl DhtTraversal {
             DhtTraversal::GetPeers(x) => x.failed(id),
             DhtTraversal::Bootstrap(x) => x.failed(id),
             DhtTraversal::Announce(x) => x.failed(id),
+            DhtTraversal::Ping(x) => x.failed(id),
         }
     }
 
@@ -57,6 +60,7 @@ impl DhtTraversal {
             DhtTraversal::GetPeers(x) => x.handle_response(resp, addr, table, rpc, has_id),
             DhtTraversal::Bootstrap(x) => x.handle_response(resp, addr, table, has_id),
             DhtTraversal::Announce(x) => x.handle_response(resp, addr, table, rpc, has_id),
+            DhtTraversal::Ping(x) => x.handle_response(resp, addr, table),
         }
     }
 }

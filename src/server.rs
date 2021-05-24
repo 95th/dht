@@ -2,7 +2,7 @@ use crate::{
     contact::{CompactNodes, CompactNodesV6, ContactRef},
     id::NodeId,
     msg::recv::{Msg, Response},
-    server::request::{DhtAnnounce, DhtBootstrap, DhtGetPeers, DhtTraversal},
+    server::request::{DhtAnnounce, DhtBootstrap, DhtGetPeers, DhtPing, DhtTraversal},
     table::RoutingTable,
 };
 use ben::Parser;
@@ -104,9 +104,9 @@ impl DhtServer {
         let mut rx = self.rx;
 
         // Bootstrap on ourselves
-        // tx.send(ClientRequest::BootStrap { target: id })
-        //     .await
-        //     .unwrap();
+        tx.send(ClientRequest::BootStrap { target: id })
+            .await
+            .unwrap();
 
         loop {
             select! {
@@ -185,8 +185,9 @@ impl DhtServer {
                             let x = DhtAnnounce::new(&info_hash, table, peer_tx);
                             running.insert(DhtTraversal::Announce(x))
                         }
-                        _ => {
-                            continue;
+                        ClientRequest::Ping { id, addr } => {
+                            let x = DhtPing::new(&id, &addr);
+                            running.insert(DhtTraversal::Ping(x))
                         }
                     };
 
