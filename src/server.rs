@@ -1,3 +1,4 @@
+use self::request::DhtGetPeers;
 use crate::{
     contact::{CompactNodes, CompactNodesV6, ContactRef},
     id::NodeId,
@@ -6,13 +7,16 @@ use crate::{
         send::{AnnouncePeer, FindNode, GetPeers, Ping},
         TxnId,
     },
+    server::request::{DhtBootstrap, DhtTraversal},
     table::RoutingTable,
 };
 use ben::{Encode, Parser};
 use futures::{channel::mpsc, select, FutureExt, SinkExt, StreamExt};
 use rpc::RpcMgr;
 use std::{
+    cell::RefCell,
     net::{Ipv4Addr, SocketAddr},
+    rc::Rc,
     time::Duration,
 };
 use tokio::{net::UdpSocket, time};
@@ -32,84 +36,13 @@ pub enum ClientRequest {
     BootStrap { target: NodeId },
 }
 
-impl ClientRequest {
-    fn write(
-        &self,
-        table: &mut RoutingTable,
-        rpc: &mut RpcMgr,
-        buf: &mut Vec<u8>,
-    ) -> Option<(TxnId, SocketAddr)> {
-        use ClientRequest as Req;
-
-        let addr;
-        let txn_id = rpc.new_txn();
-        buf.clear();
-
-        match self {
-            Req::Announce { info_hash } => {
-                addr = table.pick_closest(info_hash)?;
-                let token = rpc.get_token(&addr)?;
-
-                let msg = AnnouncePeer {
-                    id: &rpc.own_id,
-                    info_hash,
-                    port: 0,
-                    implied_port: true,
-                    txn_id,
-                    token,
-                };
-
-                msg.encode(buf);
-                log::debug!("Sending {:?}", msg);
-            }
-
-            Req::GetPeers { info_hash } => {
-                addr = table.pick_closest(info_hash)?;
-
-                let msg = GetPeers {
-                    txn_id,
-                    id: &rpc.own_id,
-                    info_hash,
-                };
-
-                msg.encode(buf);
-                log::debug!("Sending {:?}", msg);
-            }
-
-            Req::Ping {
-                id,
-                addr: target_addr,
-            } => {
-                addr = *target_addr;
-                let msg = Ping { txn_id, id };
-                msg.encode(buf);
-                log::debug!("Sending {:?}", msg);
-            }
-
-            Req::BootStrap { target } => {
-                addr = table.pick_closest(target)?;
-
-                let msg = FindNode {
-                    target,
-                    id: &rpc.own_id,
-                    txn_id,
-                };
-                msg.encode(buf);
-                log::debug!("Sending {:?}", msg);
-            }
-        }
-
-        Some((txn_id, addr))
-    }
-}
-
 impl Dht {
     pub fn new(port: u16, router_nodes: Vec<SocketAddr>) -> Self {
         Self { port, router_nodes }
     }
 
     pub async fn run(self) -> anyhow::Result<()> {
-        let udp = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, self.port)).await?;
+        let udp = &UdpSocket::bind((Ipv4Addr::UNSPECIFIED, self.port)).await?;
 
         let id = NodeId::gen();
         let table = &mut RoutingTable::new(id, self.router_nodes);
@@ -125,12 +58,14 @@ impl Dht {
         let (mut tx, mut rx) = mpsc::channel::<ClientRequest>(200);
 
         // Bootstrap on ourselves
-        tx.send(ClientRequest::BootStrap { target: id }).await.unwrap();
+        tx.send(ClientRequest::BootStrap { target: id })
+            .await
+            .unwrap();
 
         loop {
             select! {
                 // Clear timed-out transactions
-                _ = txn_prune.tick().fuse() => rpc.txns.prune(table),
+                _ = txn_prune.tick().fuse() => rpc.prune(table),
 
                 // Refresh table buckets
                 _ = table_refresh.tick().fuse() => {
@@ -160,9 +95,7 @@ impl Dht {
                         }
                     };
 
-                    if let Some(request) = rpc.handle_response(msg, addr, table) {
-                        tx.send(request).await.unwrap();
-                    }
+                   rpc.handle_response(msg, addr, table, udp, send_buf).await;
                 },
 
                 // Send requests
@@ -174,18 +107,26 @@ impl Dht {
                         None => break,
                     };
 
-                    let (txn_id, addr) = match request.write(table, rpc, send_buf) {
-                        Some(x) => x,
-                        None => continue,
-                    };
-
-                    match udp.send_to(&send_buf, addr).await {
-                        Ok(_) => {
-                            rpc.txns.insert(txn_id, &id, request);
+                    match request {
+                        ClientRequest::GetPeers { info_hash } => {
+                            let mut gp = DhtGetPeers::new(&info_hash, table);
+                            gp.invoke(rpc, udp, send_buf).await;
+                            let traversal = DhtTraversal::GetPeers(Rc::new(RefCell::new(gp)));
+                            while let Some((txn_id, node_id)) = rpc.invoked.pop() {
+                                rpc.txns
+                                    .insert(txn_id, &node_id, traversal.clone());
+                            }
                         },
-                        Err(e) => {
-                            log::warn!("Got error while sending request: {}", e);
-                        }
+                        ClientRequest::BootStrap { target } => {
+                            let mut b = DhtBootstrap::new(&target, table);
+                            b.invoke(rpc, udp, send_buf).await;
+                            let traversal = DhtTraversal::Bootstrap(Rc::new(RefCell::new(b)));
+                            while let Some((txn_id, node_id)) = rpc.invoked.pop() {
+                                rpc.txns
+                                    .insert(txn_id, &node_id, traversal.clone());
+                            }
+                        },
+                        _ => {}
                     }
                 },
                 complete => break,

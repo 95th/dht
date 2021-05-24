@@ -1,16 +1,22 @@
 use crate::contact::ContactRef;
 use crate::id::NodeId;
-use std::net::SocketAddr;
+use std::{cell::RefCell, net::SocketAddr, rc::Rc};
 
 // mod announce;
-// mod bootstrap;
-// mod get_peers;
+mod bootstrap;
+mod get_peers;
 // mod ping;
 
 // pub use announce::AnnounceRequest;
-// pub use bootstrap::BootstrapRequest;
-// pub use get_peers::GetPeersRequest;
+pub use bootstrap::DhtBootstrap;
 // pub use ping::PingRequest;
+pub use get_peers::DhtGetPeers;
+
+#[derive(Clone)]
+pub enum DhtTraversal {
+    GetPeers(Rc<RefCell<DhtGetPeers>>),
+    Bootstrap(Rc<RefCell<DhtBootstrap>>),
+}
 
 pub struct DhtNode {
     pub id: NodeId,

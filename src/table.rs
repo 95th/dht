@@ -108,21 +108,6 @@ impl RoutingTable {
         }
     }
 
-    pub fn pick_closest(&self, target: &NodeId) -> Option<SocketAddr> {
-        let mut v = vec![];
-        self.find_closest(target, &mut v, 1);
-
-        if let Some(c) = v.pop() {
-            return Some(c.addr);
-        }
-
-        if let Some(router) = self.router_nodes.iter().next() {
-            return Some(*router);
-        }
-
-        None
-    }
-
     pub fn find_closest<'a>(
         &'a self,
         target: &NodeId,
