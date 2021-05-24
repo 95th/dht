@@ -159,11 +159,11 @@ impl DhtBootstrap {
                         buf.len(),
                         count
                     );
-                    n.status.insert(Status::FAILED);
+                    n.status.insert(Status::QUERIED | Status::FAILED);
                 }
                 Err(e) => {
                     log::warn!("{}", e);
-                    n.status.insert(Status::FAILED);
+                    n.status.insert(Status::QUERIED | Status::FAILED);
                 }
             }
         }

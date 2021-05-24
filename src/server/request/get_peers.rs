@@ -6,6 +6,7 @@ use crate::server::request::{DhtNode, Status};
 use crate::server::RpcMgr;
 use crate::table::RoutingTable;
 use ben::{Decoder, Encode};
+use futures::channel::oneshot;
 use std::collections::HashSet;
 use std::net::SocketAddr;
 use tokio::net::UdpSocket;
@@ -15,10 +16,15 @@ pub struct DhtGetPeers {
     branch_factor: u8,
     nodes: Vec<DhtNode>,
     peers: HashSet<SocketAddr>,
+    peer_tx: Option<oneshot::Sender<Vec<SocketAddr>>>,
 }
 
 impl DhtGetPeers {
-    pub fn new(info_hash: &NodeId, table: &RoutingTable) -> Self {
+    pub fn new(
+        info_hash: &NodeId,
+        table: &RoutingTable,
+        peer_tx: oneshot::Sender<Vec<SocketAddr>>,
+    ) -> Self {
         let mut closest = Vec::with_capacity(Bucket::MAX_LEN);
         table.find_closest(info_hash, &mut closest, Bucket::MAX_LEN);
 
@@ -42,6 +48,7 @@ impl DhtGetPeers {
             branch_factor: 3,
             nodes,
             peers: HashSet::new(),
+            peer_tx: Some(peer_tx),
         }
     }
 
@@ -191,13 +198,23 @@ impl DhtGetPeers {
                         buf.len(),
                         count
                     );
-                    n.status.insert(Status::FAILED);
+                    n.status.insert(Status::QUERIED | Status::FAILED);
                 }
                 Err(e) => {
                     log::warn!("{}", e);
-                    n.status.insert(Status::FAILED);
+                    n.status.insert(Status::QUERIED | Status::FAILED);
                 }
             }
         }
+    }
+}
+
+impl Drop for DhtGetPeers {
+    fn drop(&mut self) {
+        self.peer_tx
+            .take()
+            .unwrap()
+            .send(self.peers.drain().collect())
+            .unwrap()
     }
 }

@@ -7,11 +7,14 @@ use crate::{
     table::RoutingTable,
 };
 use ben::Parser;
-use futures::{channel::mpsc, select, FutureExt, SinkExt, StreamExt};
+use futures::{
+    channel::{mpsc, oneshot},
+    select, FutureExt, SinkExt, StreamExt,
+};
 use rpc::RpcMgr;
 use slab::Slab;
 use std::{
-    net::{Ipv4Addr, SocketAddr},
+    net::{Ipv6Addr, SocketAddr},
     time::Duration,
 };
 use tokio::{net::UdpSocket, time};
@@ -19,25 +22,70 @@ use tokio::{net::UdpSocket, time};
 mod request;
 mod rpc;
 
-pub struct Dht {
-    port: u16,
-    router_nodes: Vec<SocketAddr>,
+pub enum ClientRequest {
+    Announce {
+        info_hash: NodeId,
+    },
+    GetPeers {
+        info_hash: NodeId,
+        peer_tx: oneshot::Sender<Vec<SocketAddr>>,
+    },
+    Ping {
+        id: NodeId,
+        addr: SocketAddr,
+    },
+    BootStrap {
+        target: NodeId,
+    },
 }
 
-pub enum ClientRequest {
-    Announce { info_hash: NodeId },
-    GetPeers { info_hash: NodeId },
-    Ping { id: NodeId, addr: SocketAddr },
-    BootStrap { target: NodeId },
+pub struct Dht {
+    tx: mpsc::Sender<ClientRequest>,
 }
 
 impl Dht {
     pub fn new(port: u16, router_nodes: Vec<SocketAddr>) -> Self {
-        Self { port, router_nodes }
+        let (tx, rx) = mpsc::channel::<ClientRequest>(200);
+        let dht = DhtServer {
+            port,
+            router_nodes,
+            tx: tx.clone(),
+            rx,
+        };
+
+        tokio::spawn(dht.run());
+        Self { tx }
     }
 
-    pub async fn run(self) -> anyhow::Result<()> {
-        let udp = &UdpSocket::bind((Ipv4Addr::UNSPECIFIED, self.port)).await?;
+    pub async fn get_peers(&mut self, info_hash: NodeId) -> anyhow::Result<Vec<SocketAddr>> {
+        let (tx, rx) = oneshot::channel();
+        self.tx
+            .send(ClientRequest::GetPeers {
+                info_hash,
+                peer_tx: tx,
+            })
+            .await?;
+
+        Ok(rx.await?)
+    }
+}
+
+pub struct DhtServer {
+    port: u16,
+    router_nodes: Vec<SocketAddr>,
+    tx: mpsc::Sender<ClientRequest>,
+    rx: mpsc::Receiver<ClientRequest>,
+}
+
+impl DhtServer {
+    async fn run(self) {
+        let udp = &match UdpSocket::bind((Ipv6Addr::UNSPECIFIED, self.port)).await {
+            Ok(x) => x,
+            Err(e) => {
+                log::warn!("Cannot open UDP socket: {}", e);
+                return;
+            }
+        };
 
         let id = NodeId::gen();
         let table = &mut RoutingTable::new(id, self.router_nodes);
@@ -50,17 +98,13 @@ impl Dht {
 
         let mut prune_txn = time::interval(Duration::from_secs(1));
         let mut table_refresh = time::interval(Duration::from_secs(60));
-        let mut check_running = time::interval(Duration::from_secs(5));
+        let mut check_running = time::interval(Duration::from_secs(2));
 
-        let (mut tx, mut rx) = mpsc::channel::<ClientRequest>(200);
+        let mut tx = self.tx;
+        let mut rx = self.rx;
 
         // Bootstrap on ourselves
         tx.send(ClientRequest::BootStrap { target: id })
-            .await
-            .unwrap();
-
-        let info_hash = NodeId::from_hex(b"d04480dfa670f72f591439b51a9f82dcc58711b5").unwrap();
-        tx.send(ClientRequest::GetPeers { info_hash })
             .await
             .unwrap();
 
@@ -71,7 +115,7 @@ impl Dht {
 
                 // Refresh table buckets
                 _ = table_refresh.tick().fuse() => {
-                    if let Some(refresh) = table.next_refresh2() {
+                    if let Some(refresh) = table.next_refresh() {
                         log::trace!("Time to refresh the routing table");
                         tx.send(refresh).await.unwrap();
                     }
@@ -125,8 +169,8 @@ impl Dht {
                     };
 
                     let traversal_id = match request {
-                        ClientRequest::GetPeers { info_hash } => {
-                            let gp = DhtGetPeers::new(&info_hash, table);
+                        ClientRequest::GetPeers { info_hash, peer_tx } => {
+                            let gp = DhtGetPeers::new(&info_hash, table, peer_tx);
                             running.insert(DhtTraversal::GetPeers(gp))
                         },
                         ClientRequest::BootStrap { target } => {
@@ -144,7 +188,6 @@ impl Dht {
                 complete => break,
             }
         }
-        Ok(())
     }
 }
 

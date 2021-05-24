@@ -15,11 +15,6 @@ pub struct RoutingTable {
     pub router_nodes: HashSet<SocketAddr>,
 }
 
-pub enum Refresh {
-    Single(NodeId, SocketAddr),
-    Full(NodeId),
-}
-
 impl RoutingTable {
     pub fn new(own_id: NodeId, router_nodes: Vec<SocketAddr>) -> Self {
         Self {
@@ -29,28 +24,7 @@ impl RoutingTable {
         }
     }
 
-    pub fn next_refresh(&mut self) -> Option<Refresh> {
-        let bucket_no = self.buckets.iter().position(|b| b.need_refresh())?;
-
-        let bucket = &mut self.buckets[bucket_no];
-        bucket.last_updated = Instant::now();
-        log::trace!("Refresh bucket: {}", bucket_no);
-
-        let c = bucket
-            .live
-            .iter()
-            .chain(bucket.extra.iter())
-            .max_by_key(|c| c.fail_count())?;
-
-        if bucket.is_full() {
-            Some(Refresh::Single(c.id, c.addr))
-        } else {
-            let id = NodeId::gen_lz(bucket_no);
-            Some(Refresh::Full(id))
-        }
-    }
-
-    pub fn next_refresh2(&mut self) -> Option<ClientRequest> {
+    pub fn next_refresh(&mut self) -> Option<ClientRequest> {
         let bucket_no = self.buckets.iter().position(|b| b.need_refresh())?;
 
         let bucket = &mut self.buckets[bucket_no];
