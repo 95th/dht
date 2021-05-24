@@ -55,11 +55,11 @@ impl Traversal {
         has_id: bool,
     ) {
         log::trace!("Handle GET_PEERS response");
-        self.invoke_count -= 1;
 
         if has_id {
             if let Some(node) = self.nodes.iter_mut().find(|node| &node.id == resp.id) {
                 node.status.insert(Status::ALIVE);
+                self.invoke_count -= 1;
             } else {
                 log::warn!(
                     "Received a response, but no corresponding DHT node found. {:?}",
@@ -69,6 +69,7 @@ impl Traversal {
             }
         } else if let Some(node) = self.nodes.iter_mut().find(|node| &node.addr == addr) {
             node.id = *resp.id;
+            self.invoke_count -= 1;
         }
 
         let result = table.read_nodes_with(resp, |c| {

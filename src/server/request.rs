@@ -1,5 +1,5 @@
-use crate::contact::ContactRef;
 use crate::id::NodeId;
+use crate::{contact::ContactRef, msg::recv::Response, table::RoutingTable};
 use std::net::SocketAddr;
 use tokio::net::UdpSocket;
 
@@ -32,6 +32,27 @@ impl DhtTraversal {
         match self {
             DhtTraversal::GetPeers(x) => x.add_requests(rpc, udp, buf, traversal_id).await,
             DhtTraversal::Bootstrap(x) => x.add_requests(rpc, udp, buf, traversal_id).await,
+        }
+    }
+
+    pub fn failed(&mut self, id: &NodeId) {
+        match self {
+            DhtTraversal::GetPeers(x) => x.failed(id),
+            DhtTraversal::Bootstrap(x) => x.failed(id),
+        }
+    }
+
+    pub fn handle_response(
+        &mut self,
+        resp: &Response<'_, '_>,
+        addr: &SocketAddr,
+        table: &mut RoutingTable,
+        rpc: &mut RpcMgr,
+        has_id: bool,
+    ) {
+        match self {
+            DhtTraversal::GetPeers(x) => x.handle_response(resp, addr, table, rpc, has_id),
+            DhtTraversal::Bootstrap(x) => x.handle_response(resp, addr, table, has_id),
         }
     }
 }

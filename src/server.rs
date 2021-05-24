@@ -185,7 +185,7 @@ impl DhtServer {
                         }
                     };
 
-                    let t = running.get_mut(traversal_id).unwrap();
+                    let t = &mut running[traversal_id];
                     let done = t.add_requests(rpc, udp, send_buf, traversal_id).await;
                     if done {
                         running.remove(traversal_id);

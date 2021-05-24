@@ -70,6 +70,7 @@ impl RpcMgr {
                         &req.id,
                         &resp.id
                     );
+                    running[req.traversal_id].failed(&req.id);
                     table.failed(&req.id);
                     return;
                 }
@@ -81,16 +82,12 @@ impl RpcMgr {
             }
         };
 
-        let done = match running.get_mut(request.traversal_id).unwrap() {
-            DhtTraversal::GetPeers(gp) => {
-                gp.handle_response(&resp, &addr, table, self, request.has_id);
-                gp.add_requests(self, udp, buf, request.traversal_id).await
-            }
-            DhtTraversal::Bootstrap(b) => {
-                b.handle_response(&resp, &addr, table, request.has_id);
-                b.add_requests(self, udp, buf, request.traversal_id).await
-            }
-        };
+        let traversal = &mut running[request.traversal_id];
+        traversal.handle_response(&resp, &addr, table, self, request.has_id);
+
+        let done = traversal
+            .add_requests(self, udp, buf, request.traversal_id)
+            .await;
 
         if done {
             running.remove(request.traversal_id);
@@ -98,12 +95,8 @@ impl RpcMgr {
     }
 
     pub fn prune(&mut self, table: &mut RoutingTable, running: &mut Slab<DhtTraversal>) {
-        self.txns.prune_with(table, |id, traversal_id| {
-            match running.get_mut(traversal_id).unwrap() {
-                DhtTraversal::GetPeers(gp) => gp.failed(id),
-                DhtTraversal::Bootstrap(b) => b.failed(id),
-            }
-        })
+        self.txns
+            .prune_with(table, |id, traversal_id| running[traversal_id].failed(id))
     }
 }
 
