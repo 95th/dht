@@ -1,6 +1,9 @@
-use crate::bucket::{Bucket, BucketResult};
 use crate::contact::{Contact, ContactRef, ContactStatus};
 use crate::id::NodeId;
+use crate::{
+    bucket::{Bucket, BucketResult},
+    server::ClientRequest,
+};
 use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::time::Instant;
@@ -47,6 +50,30 @@ impl RoutingTable {
         }
     }
 
+    pub fn next_refresh2(&mut self) -> Option<ClientRequest> {
+        let bucket_no = self.buckets.iter().position(|b| b.need_refresh())?;
+
+        let bucket = &mut self.buckets[bucket_no];
+        bucket.last_updated = Instant::now();
+        log::trace!("Refresh bucket: {}", bucket_no);
+
+        let c = bucket
+            .live
+            .iter()
+            .chain(bucket.extra.iter())
+            .max_by_key(|c| c.fail_count())?;
+
+        if bucket.is_full() {
+            Some(ClientRequest::Ping {
+                id: c.id,
+                addr: c.addr,
+            })
+        } else {
+            let id = NodeId::gen_lz(bucket_no);
+            Some(ClientRequest::BootStrap { target: id })
+        }
+    }
+
     pub fn add_router_node(&mut self, router: SocketAddr) {
         self.router_nodes.insert(router);
     }
@@ -79,6 +106,21 @@ impl RoutingTable {
                 }
             }
         }
+    }
+
+    pub fn pick_closest(&self, target: &NodeId) -> Option<SocketAddr> {
+        let mut v = vec![];
+        self.find_closest(target, &mut v, 1);
+
+        if let Some(c) = v.pop() {
+            return Some(c.addr);
+        }
+
+        if let Some(router) = self.router_nodes.iter().next() {
+            return Some(*router);
+        }
+
+        None
     }
 
     pub fn find_closest<'a>(

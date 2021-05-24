@@ -2,6 +2,7 @@ use crate::id::NodeId;
 use crate::msg::TxnId;
 use ben::{Encode, Encoder};
 
+#[derive(Debug)]
 pub struct Ping<'a> {
     pub txn_id: TxnId,
     pub id: &'a NodeId,
@@ -21,6 +22,7 @@ impl Encode for Ping<'_> {
     }
 }
 
+#[derive(Debug)]
 pub struct FindNode<'a> {
     pub txn_id: TxnId,
     pub id: &'a NodeId,
@@ -42,6 +44,7 @@ impl Encode for FindNode<'_> {
     }
 }
 
+#[derive(Debug)]
 pub struct GetPeers<'a> {
     pub txn_id: TxnId,
     pub id: &'a NodeId,
@@ -63,6 +66,7 @@ impl Encode for GetPeers<'_> {
     }
 }
 
+#[derive(Debug)]
 pub struct AnnouncePeer<'a> {
     pub txn_id: TxnId,
     pub id: &'a NodeId,

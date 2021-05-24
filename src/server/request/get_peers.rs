@@ -66,7 +66,7 @@ impl GetPeersRequest {
         addr: &SocketAddr,
         table: &mut RoutingTable,
     ) -> bool {
-        if let Some(req) = self.txns.remove(&resp.txn_id) {
+        if let Some(req) = self.txns.remove(resp.txn_id) {
             if req.has_id {
                 if &req.id == resp.id {
                     table.heard_from(&req.id);
