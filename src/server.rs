@@ -2,7 +2,6 @@ use self::request::DhtGetPeers;
 use crate::{
     contact::{CompactNodes, CompactNodesV6, ContactRef},
     id::NodeId,
-    index_map::IndexMap,
     msg::recv::{Msg, Response},
     server::request::{DhtBootstrap, DhtTraversal},
     table::RoutingTable,
@@ -10,6 +9,7 @@ use crate::{
 use ben::Parser;
 use futures::{channel::mpsc, select, FutureExt, SinkExt, StreamExt};
 use rpc::RpcMgr;
+use slab::Slab;
 use std::{
     net::{Ipv4Addr, SocketAddr},
     time::Duration,
@@ -43,7 +43,7 @@ impl Dht {
         let table = &mut RoutingTable::new(id, self.router_nodes);
         let rpc = &mut RpcMgr::new(id);
         let parser = &mut Parser::new();
-        let running = &mut IndexMap::new();
+        let running = &mut Slab::new();
 
         let recv_buf: &mut [u8] = &mut [0; 1024];
         let send_buf = &mut Vec::with_capacity(1024);

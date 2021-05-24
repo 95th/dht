@@ -84,6 +84,7 @@ dependencies = [
  "futures",
  "log",
  "rand",
+ "slab",
  "tokio",
 ]
 

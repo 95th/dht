@@ -1,8 +1,8 @@
+use slab::Slab;
 use tokio::net::UdpSocket;
 
 use crate::{
     id::NodeId,
-    index_map::IndexMap,
     msg::{recv::Msg, TxnId},
     table::RoutingTable,
 };
@@ -48,7 +48,7 @@ impl RpcMgr {
         addr: SocketAddr,
         table: &mut RoutingTable,
         udp: &UdpSocket,
-        running: &mut IndexMap<DhtTraversal>,
+        running: &mut Slab<DhtTraversal>,
         buf: &mut Vec<u8>,
     ) {
         log::debug!("Received msg: {:?}", msg);
@@ -103,7 +103,7 @@ impl RpcMgr {
         }
     }
 
-    pub fn prune(&mut self, table: &mut RoutingTable, running: &mut IndexMap<DhtTraversal>) {
+    pub fn prune(&mut self, table: &mut RoutingTable, running: &mut Slab<DhtTraversal>) {
         log::trace!("RPC Prune");
         self.txns.prune_with(table, |id, traversal_id| {
             match running.get_mut(traversal_id).unwrap() {
