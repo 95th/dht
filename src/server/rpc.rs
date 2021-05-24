@@ -81,15 +81,19 @@ impl RpcMgr {
             }
         };
 
-        match running.get_mut(request.traversal_id).unwrap() {
+        let done = match running.get_mut(request.traversal_id).unwrap() {
             DhtTraversal::GetPeers(gp) => {
-                gp.handle_response(&resp, &addr, table, self);
-                gp.invoke(self, udp, buf, request.traversal_id).await;
+                gp.handle_response(&resp, &addr, table, self, request.has_id);
+                gp.add_requests(self, udp, buf, request.traversal_id).await
             }
             DhtTraversal::Bootstrap(b) => {
-                b.handle_response(&resp, &addr, table);
-                b.invoke(self, udp, buf, request.traversal_id).await;
+                b.handle_response(&resp, &addr, table, request.has_id);
+                b.add_requests(self, udp, buf, request.traversal_id).await
             }
+        };
+
+        if done {
+            running.remove(request.traversal_id);
         }
     }
 

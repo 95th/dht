@@ -1,9 +1,8 @@
-use self::request::DhtGetPeers;
 use crate::{
     contact::{CompactNodes, CompactNodesV6, ContactRef},
     id::NodeId,
     msg::recv::{Msg, Response},
-    server::request::{DhtBootstrap, DhtTraversal},
+    server::request::{DhtBootstrap, DhtGetPeers, DhtTraversal},
     table::RoutingTable,
 };
 use ben::Parser;
@@ -104,9 +103,9 @@ impl DhtServer {
         let mut rx = self.rx;
 
         // Bootstrap on ourselves
-        tx.send(ClientRequest::BootStrap { target: id })
-            .await
-            .unwrap();
+        // tx.send(ClientRequest::BootStrap { target: id })
+        //     .await
+        //     .unwrap();
 
         loop {
             select! {
@@ -121,18 +120,22 @@ impl DhtServer {
                     }
                 }
 
-                // Check running traversal and remove completed ones.
+                // Check running traversal, add new requests and remove completed ones.
                 _ = check_running.tick().fuse() => {
-                    for (t_id, t) in running.iter_mut() {
-                        t.invoke(rpc, udp, send_buf, t_id).await;
-                    }
-
                     let before = running.len();
                     if before == 0 {
                         continue;
                     }
 
-                    running.retain(|_id, t| !t.is_done());
+                    let mut iter = running.iter_mut();
+                    while let Some((t_id, t)) = iter.next() {
+                        let done = t.add_requests(rpc, udp, send_buf, t_id).await;
+                        if done {
+                            running.remove(t_id);
+                            iter = running.iter_mut();
+                        }
+                    }
+
                     log::trace!("Prune traversals, before: {}, after: {}", before, running.len());
                 }
 
@@ -183,7 +186,10 @@ impl DhtServer {
                     };
 
                     let t = running.get_mut(traversal_id).unwrap();
-                    t.invoke(rpc, udp, send_buf, traversal_id).await;
+                    let done = t.add_requests(rpc, udp, send_buf, traversal_id).await;
+                    if done {
+                        running.remove(traversal_id);
+                    }
                 },
                 complete => break,
             }

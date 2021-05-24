@@ -6,6 +6,7 @@ use tokio::net::UdpSocket;
 // mod announce;
 mod bootstrap;
 mod get_peers;
+mod traversal;
 // mod ping;
 
 // pub use announce::AnnounceRequest;
@@ -21,23 +22,16 @@ pub enum DhtTraversal {
 }
 
 impl DhtTraversal {
-    pub fn is_done(&self) -> bool {
-        match self {
-            DhtTraversal::GetPeers(x) => x.is_done(),
-            DhtTraversal::Bootstrap(x) => x.is_done(),
-        }
-    }
-
-    pub async fn invoke(
+    pub async fn add_requests(
         &mut self,
         rpc: &mut RpcMgr,
         udp: &UdpSocket,
         buf: &mut Vec<u8>,
         traversal_id: usize,
-    ) {
+    ) -> bool {
         match self {
-            DhtTraversal::GetPeers(x) => x.invoke(rpc, udp, buf, traversal_id).await,
-            DhtTraversal::Bootstrap(x) => x.invoke(rpc, udp, buf, traversal_id).await,
+            DhtTraversal::GetPeers(x) => x.add_requests(rpc, udp, buf, traversal_id).await,
+            DhtTraversal::Bootstrap(x) => x.add_requests(rpc, udp, buf, traversal_id).await,
         }
     }
 }
