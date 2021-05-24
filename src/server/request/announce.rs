@@ -1,44 +1,65 @@
+use ben::Encode;
+use futures::channel::oneshot;
+
 use crate::bucket::Bucket;
 use crate::id::NodeId;
 use crate::msg::recv::Response;
 use crate::msg::send::AnnouncePeer;
-use crate::server::request::GetPeersRequest;
 use crate::server::request::Status;
 use crate::server::RpcMgr;
 use crate::table::RoutingTable;
 use std::net::SocketAddr;
+use tokio::net::UdpSocket;
 
-pub struct AnnounceRequest {
-    inner: GetPeersRequest,
+use super::DhtGetPeers;
+
+pub struct DhtAnnounce {
+    inner: DhtGetPeers,
 }
 
-impl AnnounceRequest {
-    pub fn new(info_hash: &NodeId, own_id: &NodeId, table: &mut RoutingTable) -> Self {
+impl DhtAnnounce {
+    pub fn new(
+        info_hash: &NodeId,
+        table: &mut RoutingTable,
+        peer_tx: oneshot::Sender<Vec<SocketAddr>>,
+    ) -> Self {
         Self {
-            inner: GetPeersRequest::new(info_hash, own_id, table),
+            inner: DhtGetPeers::new(info_hash, table, peer_tx),
         }
     }
 
-    pub fn prune(&mut self, table: &mut RoutingTable) {
-        self.inner.prune(table);
-    }
-
-    pub fn handle_reply(
+    pub fn handle_response(
         &mut self,
         resp: &Response<'_, '_>,
         addr: &SocketAddr,
         table: &mut RoutingTable,
-    ) -> bool {
-        self.inner.handle_reply(resp, addr, table)
+        rpc: &mut RpcMgr,
+        has_id: bool,
+    ) {
+        log::trace!("Handle ANNOUNCE response");
+        self.inner.handle_response(resp, addr, table, rpc, has_id);
     }
 
-    pub async fn invoke(&mut self, rpc: &mut RpcMgr) -> anyhow::Result<bool> {
-        if !self.inner.invoke(rpc).await {
-            return Ok(false);
+    pub fn failed(&mut self, id: &NodeId) {
+        self.inner.failed(id);
+    }
+
+    pub async fn add_requests(
+        &mut self,
+        rpc: &mut RpcMgr,
+        udp: &UdpSocket,
+        buf: &mut Vec<u8>,
+        traversal_id: usize,
+    ) -> bool {
+        log::trace!("Add ANNOUNCE's GET_PEERS requests");
+
+        let done = self.inner.add_requests(rpc, udp, buf, traversal_id).await;
+        if !done {
+            return false;
         }
 
         let mut announce_count = 0;
-        for n in &self.inner.nodes {
+        for n in &self.inner.traversal.nodes {
             if announce_count == Bucket::MAX_LEN {
                 break;
             }
@@ -47,29 +68,35 @@ impl AnnounceRequest {
                 continue;
             }
 
-            let token = match self.inner.tokens.get(&n.addr) {
+            let txn_id = rpc.new_txn();
+            let token = match rpc.tokens.get(&n.addr) {
                 Some(t) => t,
                 None => continue,
             };
 
             let msg = AnnouncePeer {
-                id: &self.inner.own_id,
-                info_hash: &self.inner.info_hash,
+                txn_id,
+                id: &rpc.own_id,
+                info_hash: &self.inner.traversal.target,
                 port: 0,
                 implied_port: true,
-                txn_id: rpc.next_id(),
                 token,
             };
 
-            rpc.send(&msg, &n.addr).await?;
-            announce_count += 1;
-            log::debug!("Announced to {}", n.addr);
+            buf.clear();
+            msg.encode(buf);
+
+            match udp.send_to(&buf, &n.addr).await {
+                Ok(_) => {
+                    log::debug!("Announced to {}", n.addr);
+                    announce_count += 1;
+                }
+                Err(e) => {
+                    log::warn!("Failed to announce to {}: {}", n.addr, e);
+                }
+            }
         }
 
-        Ok(true)
-    }
-
-    pub fn get_peers(self) -> Vec<SocketAddr> {
-        self.inner.get_peers()
+        true
     }
 }

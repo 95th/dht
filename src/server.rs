@@ -2,7 +2,7 @@ use crate::{
     contact::{CompactNodes, CompactNodesV6, ContactRef},
     id::NodeId,
     msg::recv::{Msg, Response},
-    server::request::{DhtBootstrap, DhtGetPeers, DhtTraversal},
+    server::request::{DhtAnnounce, DhtBootstrap, DhtGetPeers, DhtTraversal},
     table::RoutingTable,
 };
 use ben::Parser;
@@ -24,6 +24,7 @@ mod rpc;
 pub enum ClientRequest {
     Announce {
         info_hash: NodeId,
+        peer_tx: oneshot::Sender<Vec<SocketAddr>>,
     },
     GetPeers {
         info_hash: NodeId,
@@ -173,13 +174,17 @@ impl DhtServer {
 
                     let traversal_id = match request {
                         ClientRequest::GetPeers { info_hash, peer_tx } => {
-                            let gp = DhtGetPeers::new(&info_hash, table, peer_tx);
-                            running.insert(DhtTraversal::GetPeers(gp))
+                            let x = DhtGetPeers::new(&info_hash, table, peer_tx);
+                            running.insert(DhtTraversal::GetPeers(x))
                         },
                         ClientRequest::BootStrap { target } => {
-                            let b = DhtBootstrap::new(&target, table);
-                            running.insert(DhtTraversal::Bootstrap(b))
+                            let x = DhtBootstrap::new(&target, table);
+                            running.insert(DhtTraversal::Bootstrap(x))
                         },
+                        ClientRequest::Announce { info_hash, peer_tx } => {
+                            let x = DhtAnnounce::new(&info_hash, table, peer_tx);
+                            running.insert(DhtTraversal::Announce(x))
+                        }
                         _ => {
                             continue;
                         }

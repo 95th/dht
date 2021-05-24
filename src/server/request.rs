@@ -3,13 +3,13 @@ use crate::{contact::ContactRef, msg::recv::Response, table::RoutingTable};
 use std::net::SocketAddr;
 use tokio::net::UdpSocket;
 
-// mod announce;
+mod announce;
 mod bootstrap;
 mod get_peers;
 mod traversal;
 // mod ping;
 
-// pub use announce::AnnounceRequest;
+pub use announce::DhtAnnounce;
 pub use bootstrap::DhtBootstrap;
 // pub use ping::PingRequest;
 pub use get_peers::DhtGetPeers;
@@ -19,6 +19,7 @@ use super::rpc::RpcMgr;
 pub enum DhtTraversal {
     GetPeers(DhtGetPeers),
     Bootstrap(DhtBootstrap),
+    Announce(DhtAnnounce),
 }
 
 impl DhtTraversal {
@@ -32,6 +33,7 @@ impl DhtTraversal {
         match self {
             DhtTraversal::GetPeers(x) => x.add_requests(rpc, udp, buf, traversal_id).await,
             DhtTraversal::Bootstrap(x) => x.add_requests(rpc, udp, buf, traversal_id).await,
+            DhtTraversal::Announce(x) => x.add_requests(rpc, udp, buf, traversal_id).await,
         }
     }
 
@@ -39,6 +41,7 @@ impl DhtTraversal {
         match self {
             DhtTraversal::GetPeers(x) => x.failed(id),
             DhtTraversal::Bootstrap(x) => x.failed(id),
+            DhtTraversal::Announce(x) => x.failed(id),
         }
     }
 
@@ -53,6 +56,7 @@ impl DhtTraversal {
         match self {
             DhtTraversal::GetPeers(x) => x.handle_response(resp, addr, table, rpc, has_id),
             DhtTraversal::Bootstrap(x) => x.handle_response(resp, addr, table, has_id),
+            DhtTraversal::Announce(x) => x.handle_response(resp, addr, table, rpc, has_id),
         }
     }
 }

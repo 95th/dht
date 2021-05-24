@@ -12,7 +12,7 @@ use tokio::net::UdpSocket;
 use super::traversal::Traversal;
 
 pub struct DhtGetPeers {
-    traversal: Traversal,
+    pub traversal: Traversal,
     peers: HashSet<SocketAddr>,
     peer_tx: Option<oneshot::Sender<Vec<SocketAddr>>>,
 }
