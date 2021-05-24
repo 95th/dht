@@ -28,10 +28,16 @@ impl DhtTraversal {
         }
     }
 
-    pub async fn invoke(&mut self, rpc: &mut RpcMgr, udp: &UdpSocket, buf: &mut Vec<u8>) {
+    pub async fn invoke(
+        &mut self,
+        rpc: &mut RpcMgr,
+        udp: &UdpSocket,
+        buf: &mut Vec<u8>,
+        traversal_id: usize,
+    ) {
         match self {
-            DhtTraversal::GetPeers(x) => x.invoke(rpc, udp, buf).await,
-            DhtTraversal::Bootstrap(x) => x.invoke(rpc, udp, buf).await,
+            DhtTraversal::GetPeers(x) => x.invoke(rpc, udp, buf, traversal_id).await,
+            DhtTraversal::Bootstrap(x) => x.invoke(rpc, udp, buf, traversal_id).await,
         }
     }
 }

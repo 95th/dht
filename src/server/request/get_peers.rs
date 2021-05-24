@@ -71,7 +71,7 @@ impl DhtGetPeers {
             };
         }
 
-        outstanding == 0 || alive == Bucket::MAX_LEN
+        outstanding == 0 && alive == Bucket::MAX_LEN
     }
 
     pub fn handle_response(
@@ -136,7 +136,13 @@ impl DhtGetPeers {
         }
     }
 
-    pub async fn invoke(&mut self, rpc: &mut RpcMgr, udp: &UdpSocket, buf: &mut Vec<u8>) {
+    pub async fn invoke(
+        &mut self,
+        rpc: &mut RpcMgr,
+        udp: &UdpSocket,
+        buf: &mut Vec<u8>,
+        traversal_id: usize,
+    ) {
         log::trace!("Invoke GET_PEERS request");
         let mut outstanding = 0;
         let mut alive = 0;
@@ -176,7 +182,7 @@ impl DhtGetPeers {
             match udp.send_to(buf, n.addr).await {
                 Ok(count) if count == buf.len() => {
                     n.status.insert(Status::QUERIED);
-                    rpc.invoked.push((msg.txn_id, n.id));
+                    rpc.txns.insert(msg.txn_id, &n.id, traversal_id);
                     outstanding += 1;
                 }
                 Ok(count) => {

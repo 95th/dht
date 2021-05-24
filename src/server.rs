@@ -59,6 +59,11 @@ impl Dht {
             .await
             .unwrap();
 
+        let info_hash = NodeId::from_hex(b"d04480dfa670f72f591439b51a9f82dcc58711b5").unwrap();
+        tx.send(ClientRequest::Announce { info_hash })
+            .await
+            .unwrap();
+
         loop {
             select! {
                 // Clear timed-out transactions
@@ -74,18 +79,17 @@ impl Dht {
 
                 // Check running traversal and remove completed ones.
                 _ = check_running.tick().fuse() => {
+                    for (t_id, t) in running.iter_mut() {
+                        t.invoke(rpc, udp, send_buf, t_id).await;
+                    }
+
                     let before = running.len();
                     if before == 0 {
                         continue;
                     }
 
                     running.retain(|_id, t| !t.is_done());
-
-                    log::trace!("Running traversal pruned, before: {}, after: {}", before, running.len());
-
-                    for (_, t) in running.iter_mut() {
-                        t.invoke(rpc, udp, send_buf).await;
-                    }
+                    log::trace!("Prune traversals, before: {}, after: {}", before, running.len());
                 }
 
                 // Listen for response
@@ -120,27 +124,22 @@ impl Dht {
                         None => break,
                     };
 
-                    match request {
+                    let traversal_id = match request {
                         ClientRequest::GetPeers { info_hash } => {
-                            let mut gp = DhtGetPeers::new(&info_hash, table);
-                            gp.invoke(rpc, udp, send_buf).await;
-                            let traversal_id = running.insert(DhtTraversal::GetPeers(gp));
-                            while let Some((txn_id, node_id)) = rpc.invoked.pop() {
-                                rpc.txns
-                                    .insert(txn_id, &node_id, traversal_id);
-                            }
+                            let gp = DhtGetPeers::new(&info_hash, table);
+                            running.insert(DhtTraversal::GetPeers(gp))
                         },
                         ClientRequest::BootStrap { target } => {
-                            let mut b = DhtBootstrap::new(&target, table);
-                            b.invoke(rpc, udp, send_buf).await;
-                            let traversal_id = running.insert(DhtTraversal::Bootstrap(b));
-                            while let Some((txn_id, node_id)) = rpc.invoked.pop() {
-                                rpc.txns
-                                    .insert(txn_id, &node_id, traversal_id);
-                            }
+                            let b = DhtBootstrap::new(&target, table);
+                            running.insert(DhtTraversal::Bootstrap(b))
                         },
-                        _ => {}
-                    }
+                        _ => {
+                            continue;
+                        }
+                    };
+
+                    let t = running.get_mut(traversal_id).unwrap();
+                    t.invoke(rpc, udp, send_buf, traversal_id).await;
                 },
                 complete => break,
             }

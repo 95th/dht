@@ -19,7 +19,6 @@ pub struct RpcMgr {
     pub(crate) own_id: NodeId,
     pub(crate) tokens: HashMap<SocketAddr, Vec<u8>>,
     pub(crate) txns: Transactions,
-    pub(crate) invoked: Vec<(TxnId, NodeId)>,
 }
 
 impl RpcMgr {
@@ -29,7 +28,6 @@ impl RpcMgr {
             own_id,
             tokens: HashMap::new(),
             txns: Transactions::new(),
-            invoked: Vec::new(),
         }
     }
 
@@ -86,25 +84,16 @@ impl RpcMgr {
         match running.get_mut(request.traversal_id).unwrap() {
             DhtTraversal::GetPeers(gp) => {
                 gp.handle_response(&resp, &addr, table, self);
-                gp.invoke(self, udp, buf).await;
-
-                while let Some((txn_id, node_id)) = self.invoked.pop() {
-                    self.txns.insert(txn_id, &node_id, request.traversal_id);
-                }
+                gp.invoke(self, udp, buf, request.traversal_id).await;
             }
             DhtTraversal::Bootstrap(b) => {
                 b.handle_response(&resp, &addr, table);
-                b.invoke(self, udp, buf).await;
-
-                while let Some((txn_id, node_id)) = self.invoked.pop() {
-                    self.txns.insert(txn_id, &node_id, request.traversal_id);
-                }
+                b.invoke(self, udp, buf, request.traversal_id).await;
             }
         }
     }
 
     pub fn prune(&mut self, table: &mut RoutingTable, running: &mut Slab<DhtTraversal>) {
-        log::trace!("RPC Prune");
         self.txns.prune_with(table, |id, traversal_id| {
             match running.get_mut(traversal_id).unwrap() {
                 DhtTraversal::GetPeers(gp) => gp.failed(id),
