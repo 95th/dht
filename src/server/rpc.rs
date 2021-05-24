@@ -2,6 +2,7 @@ use tokio::net::UdpSocket;
 
 use crate::{
     id::NodeId,
+    index_map::IndexMap,
     msg::{recv::Msg, TxnId},
     table::RoutingTable,
 };
@@ -36,6 +37,7 @@ impl RpcMgr {
         self.txn_id.next_id()
     }
 
+    #[allow(unused)]
     pub fn get_token(&self, addr: &SocketAddr) -> Option<&[u8]> {
         self.tokens.get(addr).map(|v| &v[..])
     }
@@ -46,6 +48,7 @@ impl RpcMgr {
         addr: SocketAddr,
         table: &mut RoutingTable,
         udp: &UdpSocket,
+        running: &mut IndexMap<DhtTraversal>,
         buf: &mut Vec<u8>,
     ) {
         log::debug!("Received msg: {:?}", msg);
@@ -80,37 +83,34 @@ impl RpcMgr {
             }
         };
 
-        match &request.traversal {
+        match running.get_mut(request.traversal_id).unwrap() {
             DhtTraversal::GetPeers(gp) => {
-                let gp = &mut *gp.borrow_mut();
                 gp.handle_response(&resp, &addr, table, self);
                 gp.invoke(self, udp, buf).await;
 
                 while let Some((txn_id, node_id)) = self.invoked.pop() {
-                    self.txns
-                        .insert(txn_id, &node_id, request.traversal.clone());
+                    self.txns.insert(txn_id, &node_id, request.traversal_id);
                 }
             }
             DhtTraversal::Bootstrap(b) => {
-                let b = &mut *b.borrow_mut();
                 b.handle_response(&resp, &addr, table);
                 b.invoke(self, udp, buf).await;
 
                 while let Some((txn_id, node_id)) = self.invoked.pop() {
-                    self.txns
-                        .insert(txn_id, &node_id, request.traversal.clone());
+                    self.txns.insert(txn_id, &node_id, request.traversal_id);
                 }
             }
         }
     }
 
-    pub fn prune(&mut self, table: &mut RoutingTable) {
+    pub fn prune(&mut self, table: &mut RoutingTable, running: &mut IndexMap<DhtTraversal>) {
         log::trace!("RPC Prune");
-        self.txns
-            .prune_with(table, |id, traversal| match traversal {
-                DhtTraversal::GetPeers(gp) => gp.borrow_mut().failed(id),
-                DhtTraversal::Bootstrap(b) => b.borrow_mut().failed(id),
-            })
+        self.txns.prune_with(table, |id, traversal_id| {
+            match running.get_mut(traversal_id).unwrap() {
+                DhtTraversal::GetPeers(gp) => gp.failed(id),
+                DhtTraversal::Bootstrap(b) => b.failed(id),
+            }
+        })
     }
 }
 
@@ -118,16 +118,16 @@ pub struct Request {
     pub id: NodeId,
     pub sent: Instant,
     pub has_id: bool,
-    pub traversal: DhtTraversal,
+    pub traversal_id: usize,
 }
 
 impl Request {
-    pub fn new(id: &NodeId, traversal: DhtTraversal) -> Self {
+    pub fn new(id: &NodeId, traversal_id: usize) -> Self {
         Self {
             id: if id.is_zero() { NodeId::gen() } else { *id },
             sent: Instant::now(),
             has_id: !id.is_zero(),
-            traversal,
+            traversal_id,
         }
     }
 }
@@ -149,23 +149,19 @@ impl Transactions {
         }
     }
 
-    pub fn insert(&mut self, txn_id: TxnId, id: &NodeId, traversal: DhtTraversal) {
-        self.pending.insert(txn_id, Request::new(id, traversal));
+    pub fn insert(&mut self, txn_id: TxnId, id: &NodeId, traversal_id: usize) {
+        self.pending.insert(txn_id, Request::new(id, traversal_id));
     }
 
     pub fn remove(&mut self, txn_id: TxnId) -> Option<Request> {
         self.pending.remove(&txn_id)
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.pending.is_empty()
-    }
-
     /// Remove transactions that are timed out or not in Routing table
     /// anymore.
     pub fn prune_with<F>(&mut self, table: &mut RoutingTable, mut f: F)
     where
-        F: FnMut(&NodeId, &DhtTraversal),
+        F: FnMut(&NodeId, usize),
     {
         let before = self.pending.len();
         let timeout = self.timeout;
@@ -180,7 +176,7 @@ impl Transactions {
                 table.failed(&request.id);
             }
 
-            f(&request.id, &request.traversal);
+            f(&request.id, request.traversal_id);
 
             log::trace!("Txn {:?} expired", txn_id);
             false
