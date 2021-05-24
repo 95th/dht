@@ -60,7 +60,7 @@ impl Dht {
             .unwrap();
 
         let info_hash = NodeId::from_hex(b"d04480dfa670f72f591439b51a9f82dcc58711b5").unwrap();
-        tx.send(ClientRequest::Announce { info_hash })
+        tx.send(ClientRequest::GetPeers { info_hash })
             .await
             .unwrap();
 
