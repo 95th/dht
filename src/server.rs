@@ -48,8 +48,9 @@ impl Dht {
         let recv_buf: &mut [u8] = &mut [0; 1024];
         let send_buf = &mut Vec::with_capacity(1024);
 
-        let mut txn_prune = time::interval(Duration::from_secs(1));
+        let mut prune_txn = time::interval(Duration::from_secs(1));
         let mut table_refresh = time::interval(Duration::from_secs(60));
+        let mut check_running = time::interval(Duration::from_secs(5));
 
         let (mut tx, mut rx) = mpsc::channel::<ClientRequest>(200);
 
@@ -61,13 +62,29 @@ impl Dht {
         loop {
             select! {
                 // Clear timed-out transactions
-                _ = txn_prune.tick().fuse() => rpc.prune(table, running),
+                _ = prune_txn.tick().fuse() => rpc.prune(table, running),
 
                 // Refresh table buckets
                 _ = table_refresh.tick().fuse() => {
                     if let Some(refresh) = table.next_refresh2() {
                         log::trace!("Time to refresh the routing table");
                         tx.send(refresh).await.unwrap();
+                    }
+                }
+
+                // Check running traversal and remove completed ones.
+                _ = check_running.tick().fuse() => {
+                    let before = running.len();
+                    if before == 0 {
+                        continue;
+                    }
+
+                    running.retain(|_id, t| !t.is_done());
+
+                    log::trace!("Running traversal pruned, before: {}, after: {}", before, running.len());
+
+                    for (_, t) in running.iter_mut() {
+                        t.invoke(rpc, udp, send_buf).await;
                     }
                 }
 

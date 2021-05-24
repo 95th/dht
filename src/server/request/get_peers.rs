@@ -45,6 +45,35 @@ impl DhtGetPeers {
         }
     }
 
+    pub fn is_done(&self) -> bool {
+        let mut outstanding = 0;
+        let mut alive = 0;
+
+        for n in &self.nodes {
+            if alive == Bucket::MAX_LEN {
+                break;
+            }
+
+            if outstanding == self.branch_factor {
+                break;
+            }
+
+            if n.status.contains(Status::ALIVE) {
+                alive += 1;
+                continue;
+            }
+
+            if n.status.contains(Status::QUERIED) {
+                if !n.status.contains(Status::FAILED) {
+                    outstanding += 1;
+                }
+                continue;
+            };
+        }
+
+        outstanding == 0 || alive == Bucket::MAX_LEN
+    }
+
     pub fn handle_response(
         &mut self,
         resp: &Response<'_, '_>,
@@ -141,6 +170,8 @@ impl DhtGetPeers {
 
             buf.clear();
             msg.encode(buf);
+
+            log::trace!("Send to {}: {:?}", n.addr, msg);
 
             match udp.send_to(buf, n.addr).await {
                 Ok(count) if count == buf.len() => {

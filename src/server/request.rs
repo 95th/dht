@@ -1,6 +1,7 @@
 use crate::contact::ContactRef;
 use crate::id::NodeId;
 use std::net::SocketAddr;
+use tokio::net::UdpSocket;
 
 // mod announce;
 mod bootstrap;
@@ -12,9 +13,27 @@ pub use bootstrap::DhtBootstrap;
 // pub use ping::PingRequest;
 pub use get_peers::DhtGetPeers;
 
+use super::rpc::RpcMgr;
+
 pub enum DhtTraversal {
     GetPeers(DhtGetPeers),
     Bootstrap(DhtBootstrap),
+}
+
+impl DhtTraversal {
+    pub fn is_done(&self) -> bool {
+        match self {
+            DhtTraversal::GetPeers(x) => x.is_done(),
+            DhtTraversal::Bootstrap(x) => x.is_done(),
+        }
+    }
+
+    pub async fn invoke(&mut self, rpc: &mut RpcMgr, udp: &UdpSocket, buf: &mut Vec<u8>) {
+        match self {
+            DhtTraversal::GetPeers(x) => x.invoke(rpc, udp, buf).await,
+            DhtTraversal::Bootstrap(x) => x.invoke(rpc, udp, buf).await,
+        }
+    }
 }
 
 pub struct DhtNode {
