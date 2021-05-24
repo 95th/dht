@@ -68,6 +68,18 @@ impl Dht {
 
         Ok(rx.await?)
     }
+
+    pub async fn announce(&mut self, info_hash: NodeId) -> anyhow::Result<Vec<SocketAddr>> {
+        let (tx, rx) = oneshot::channel();
+        self.tx
+            .send(ClientRequest::Announce {
+                info_hash,
+                peer_tx: tx,
+            })
+            .await?;
+
+        Ok(rx.await?)
+    }
 }
 
 pub struct DhtServer {

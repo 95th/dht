@@ -16,9 +16,9 @@ use super::request::DhtTraversal;
 
 pub struct RpcMgr {
     txn_id: TxnId,
-    pub(crate) own_id: NodeId,
-    pub(crate) tokens: HashMap<SocketAddr, Vec<u8>>,
-    pub(crate) txns: Transactions,
+    pub own_id: NodeId,
+    pub tokens: HashMap<SocketAddr, Vec<u8>>,
+    pub txns: Transactions,
 }
 
 impl RpcMgr {
@@ -33,11 +33,6 @@ impl RpcMgr {
 
     pub fn new_txn(&mut self) -> TxnId {
         self.txn_id.next_id()
-    }
-
-    #[allow(unused)]
-    pub fn get_token(&self, addr: &SocketAddr) -> Option<&[u8]> {
-        self.tokens.get(addr).map(|v| &v[..])
     }
 
     pub async fn handle_response(

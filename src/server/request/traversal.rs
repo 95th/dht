@@ -54,8 +54,6 @@ impl Traversal {
         table: &mut RoutingTable,
         has_id: bool,
     ) {
-        log::trace!("Handle GET_PEERS response");
-
         if has_id {
             if let Some(node) = self.nodes.iter_mut().find(|node| &node.id == resp.id) {
                 node.status.insert(Status::ALIVE);
@@ -115,7 +113,6 @@ impl Traversal {
     where
         F: FnMut(TxnId, &NodeId, &mut Vec<u8>),
     {
-        log::trace!("Invoke GET_PEERS request");
         let mut outstanding = 0;
         let mut alive = 0;
 

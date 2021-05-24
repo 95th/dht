@@ -39,7 +39,6 @@ impl DhtGetPeers {
         has_id: bool,
     ) {
         log::trace!("Handle GET_PEERS response");
-
         self.traversal.handle_response(resp, addr, table, has_id);
 
         if let Some(token) = resp.body.get_bytes("token") {

@@ -58,6 +58,8 @@ impl DhtAnnounce {
             return false;
         }
 
+        log::trace!("Finished ANNOUNCE's GET_PEERS. Time to announce");
+
         let mut announce_count = 0;
         for n in &self.inner.traversal.nodes {
             if announce_count == Bucket::MAX_LEN {
@@ -71,7 +73,10 @@ impl DhtAnnounce {
             let txn_id = rpc.new_txn();
             let token = match rpc.tokens.get(&n.addr) {
                 Some(t) => t,
-                None => continue,
+                None => {
+                    log::warn!("Token not found for {}", n.addr);
+                    continue;
+                }
             };
 
             let msg = AnnouncePeer {
@@ -95,6 +100,10 @@ impl DhtAnnounce {
                     log::warn!("Failed to announce to {}: {}", n.addr, e);
                 }
             }
+        }
+
+        if announce_count == 0 {
+            log::warn!("Couldn't announce to anyone");
         }
 
         true
