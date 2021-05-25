@@ -110,7 +110,6 @@ impl DhtServer {
 
         let mut prune_txn = time::interval(Duration::from_secs(1));
         let mut table_refresh = time::interval(Duration::from_secs(60));
-        let mut check_running = time::interval(Duration::from_secs(2));
 
         let mut tx = self.tx;
         let mut rx = self.rx;
@@ -123,7 +122,9 @@ impl DhtServer {
         loop {
             select! {
                 // Clear timed-out transactions
-                _ = prune_txn.tick().fuse() => rpc.prune(table, running),
+                _ = prune_txn.tick().fuse() => {
+                    rpc.check_timed_out_txns(table, running, udp, send_buf).await;
+                }
 
                 // Refresh table buckets
                 _ = table_refresh.tick().fuse() => {
@@ -131,25 +132,6 @@ impl DhtServer {
                         log::trace!("Time to refresh the routing table");
                         tx.send(refresh).await.unwrap();
                     }
-                }
-
-                // Check running traversal, add new requests and remove completed ones.
-                _ = check_running.tick().fuse() => {
-                    let before = running.len();
-                    if before == 0 {
-                        continue;
-                    }
-
-                    let mut iter = running.iter_mut();
-                    while let Some((t_id, t)) = iter.next() {
-                        let done = t.add_requests(rpc, udp, send_buf, t_id).await;
-                        if done {
-                            running.remove(t_id);
-                            iter = running.iter_mut();
-                        }
-                    }
-
-                    log::trace!("Prune traversals, before: {}, after: {}", before, running.len());
                 }
 
                 // Listen for response

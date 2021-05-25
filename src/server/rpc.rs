@@ -6,8 +6,8 @@ use crate::{
     msg::{recv::Msg, TxnId},
     table::RoutingTable,
 };
+use hashbrown::HashMap;
 use std::{
-    collections::HashMap,
     net::SocketAddr,
     time::{Duration, Instant},
 };
@@ -89,9 +89,41 @@ impl RpcMgr {
         }
     }
 
-    pub fn prune(&mut self, table: &mut RoutingTable, running: &mut Slab<DhtTraversal>) {
-        self.txns
-            .prune_with(table, |id, traversal_id| running[traversal_id].failed(id))
+    pub async fn check_timed_out_txns(
+        &mut self,
+        table: &mut RoutingTable,
+        running: &mut Slab<DhtTraversal>,
+        udp: &UdpSocket,
+        buf: &mut Vec<u8>,
+    ) {
+        let before = self.txns.pending.len();
+        let cutoff = Instant::now() - self.txns.timeout;
+
+        let out = self
+            .txns
+            .pending
+            .drain_filter(|_, request| request.sent < cutoff)
+            .collect::<Vec<_>>();
+
+        for (txn_id, request) in out {
+            log::trace!("Txn {:?} expired", txn_id);
+            if request.has_id {
+                table.failed(&request.id);
+            }
+
+            let t = &mut running[request.traversal_id];
+            t.failed(&request.id);
+            let done = t.add_requests(self, udp, buf, request.traversal_id).await;
+            if done {
+                running.remove(request.traversal_id);
+            }
+        }
+
+        log::trace!(
+            "Check timed out txns, before: {}, after: {}",
+            before,
+            self.txns.pending.len()
+        );
     }
 }
 
@@ -136,37 +168,5 @@ impl Transactions {
 
     pub fn remove(&mut self, txn_id: TxnId) -> Option<Request> {
         self.pending.remove(&txn_id)
-    }
-
-    /// Remove transactions that are timed out or not in Routing table
-    /// anymore.
-    pub fn prune_with<F>(&mut self, table: &mut RoutingTable, mut f: F)
-    where
-        F: FnMut(&NodeId, usize),
-    {
-        let before = self.pending.len();
-        let timeout = self.timeout;
-
-        self.pending.retain(|txn_id, request| {
-            if Instant::now() - request.sent < timeout {
-                // Not timed out. Keep it.
-                return true;
-            }
-
-            if request.has_id {
-                table.failed(&request.id);
-            }
-
-            f(&request.id, request.traversal_id);
-
-            log::trace!("Txn {:?} expired", txn_id);
-            false
-        });
-
-        log::trace!(
-            "Prune txns, before: {}, after: {}",
-            before,
-            self.pending.len()
-        );
     }
 }
