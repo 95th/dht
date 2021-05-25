@@ -82,7 +82,6 @@ impl DhtAnnounce {
                 token,
             };
 
-            rpc.buf.clear();
             msg.encode(&mut rpc.buf);
 
             match rpc.send(n.addr).await {

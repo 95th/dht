@@ -66,7 +66,6 @@ impl DhtPing {
             id: &rpc.own_id,
         };
 
-        rpc.buf.clear();
         msg.encode(&mut rpc.buf);
 
         match rpc.send(self.node.addr).await {

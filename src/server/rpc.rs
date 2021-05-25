@@ -15,22 +15,22 @@ use std::{
 use super::request::DhtTraversal;
 
 pub struct RpcMgr<'a> {
+    udp: &'a UdpSocket,
     txn_id: TxnId,
     pub own_id: NodeId,
     pub tokens: HashMap<SocketAddr, Vec<u8>>,
     pub txns: Transactions,
-    pub udp: &'a UdpSocket,
     pub buf: Vec<u8>,
 }
 
 impl<'a> RpcMgr<'a> {
     pub fn new(own_id: NodeId, udp: &'a UdpSocket) -> Self {
         Self {
+            udp,
             txn_id: TxnId(0),
             own_id,
             tokens: HashMap::new(),
             txns: Transactions::new(),
-            udp,
             buf: Vec::with_capacity(1024),
         }
     }
@@ -40,8 +40,11 @@ impl<'a> RpcMgr<'a> {
     }
 
     pub async fn send(&mut self, addr: SocketAddr) -> anyhow::Result<()> {
-        let n = self.udp.send_to(&self.buf, addr).await?;
-        anyhow::ensure!(n == self.buf.len(), "Couldn't write the whole message");
+        let to_write = self.buf.len();
+        let result = self.udp.send_to(&self.buf, addr).await;
+        self.buf.clear();
+        let written = result?;
+        anyhow::ensure!(written == to_write, "Couldn't write the whole message");
         Ok(())
     }
 
