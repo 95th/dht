@@ -7,26 +7,24 @@ use ben::{Decoder, Encode};
 use futures::channel::oneshot;
 use std::collections::HashSet;
 use std::net::SocketAddr;
-use tokio::net::UdpSocket;
 
 use super::traversal::Traversal;
 
-pub struct DhtGetPeers<'a> {
-    pub traversal: Traversal<'a>,
+pub struct DhtGetPeers {
+    pub traversal: Traversal,
     peers: HashSet<SocketAddr>,
     peer_tx: oneshot::Sender<Vec<SocketAddr>>,
 }
 
-impl<'a> DhtGetPeers<'a> {
+impl DhtGetPeers {
     pub fn new(
         info_hash: &NodeId,
         table: &RoutingTable,
         peer_tx: oneshot::Sender<Vec<SocketAddr>>,
-        udp: &'a UdpSocket,
         traversal_id: usize,
     ) -> Self {
         Self {
-            traversal: Traversal::new(info_hash, table, udp, traversal_id),
+            traversal: Traversal::new(info_hash, table, traversal_id),
             peers: HashSet::new(),
             peer_tx,
         }
@@ -57,19 +55,22 @@ impl<'a> DhtGetPeers<'a> {
         self.traversal.set_failed(id, addr);
     }
 
-    pub async fn add_requests(&mut self, rpc: &mut RpcMgr, buf: &mut Vec<u8>) -> bool {
+    pub async fn add_requests(&mut self, rpc: &mut RpcMgr<'_>) -> bool {
         log::trace!("Add GET_PEERS requests");
 
         let info_hash = self.traversal.target;
         self.traversal
-            .add_requests(rpc, buf, |txn_id, own_id, buf| {
+            .add_requests(rpc, |rpc| {
                 let msg = GetPeers {
-                    txn_id,
-                    id: own_id,
+                    txn_id: rpc.new_txn(),
+                    id: &rpc.own_id,
                     info_hash: &info_hash,
                 };
-                msg.encode(buf);
+
                 log::trace!("Send {:?}", msg);
+
+                msg.encode(&mut rpc.buf);
+                msg.txn_id
             })
             .await
     }

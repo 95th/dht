@@ -7,17 +7,15 @@ use crate::server::RpcMgr;
 use crate::table::RoutingTable;
 use ben::Encode;
 use std::net::SocketAddr;
-use tokio::net::UdpSocket;
 
-pub struct DhtPing<'a> {
+pub struct DhtPing {
     node: DhtNode,
     done: bool,
-    udp: &'a UdpSocket,
     traversal_id: usize,
 }
 
-impl<'a> DhtPing<'a> {
-    pub fn new(id: &NodeId, addr: &SocketAddr, udp: &'a UdpSocket, traversal_id: usize) -> Self {
+impl DhtPing {
+    pub fn new(id: &NodeId, addr: &SocketAddr, traversal_id: usize) -> Self {
         Self {
             node: DhtNode {
                 id: *id,
@@ -25,7 +23,6 @@ impl<'a> DhtPing<'a> {
                 status: Status::INITIAL,
             },
             done: false,
-            udp,
             traversal_id,
         }
     }
@@ -57,29 +54,26 @@ impl<'a> DhtPing<'a> {
         self.done = true;
     }
 
-    pub async fn add_requests(&mut self, rpc: &mut RpcMgr, buf: &mut Vec<u8>) -> bool {
+    pub async fn add_requests(&mut self, rpc: &mut RpcMgr<'_>) -> bool {
         log::trace!("Invoke PING request");
         if self.done {
             return true;
         }
 
+        let txn_id = rpc.new_txn();
         let msg = Ping {
-            txn_id: rpc.new_txn(),
+            txn_id,
             id: &rpc.own_id,
         };
 
-        buf.clear();
-        msg.encode(buf);
+        rpc.buf.clear();
+        msg.encode(&mut rpc.buf);
 
-        match self.udp.send_to(&buf, &self.node.addr).await {
+        match rpc.send(self.node.addr).await {
             Ok(_) => {
                 self.node.status.insert(Status::QUERIED);
-                rpc.txns.insert(
-                    msg.txn_id,
-                    &self.node.id,
-                    &self.node.addr,
-                    self.traversal_id,
-                );
+                rpc.txns
+                    .insert(txn_id, &self.node.id, &self.node.addr, self.traversal_id);
                 false
             }
             Err(e) => {

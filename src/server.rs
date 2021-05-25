@@ -91,7 +91,7 @@ struct DhtServer {
 
 impl DhtServer {
     async fn run(self) {
-        let udp = &match UdpSocket::bind((Ipv6Addr::UNSPECIFIED, self.port)).await {
+        let udp = match UdpSocket::bind((Ipv6Addr::UNSPECIFIED, self.port)).await {
             Ok(x) => x,
             Err(e) => {
                 log::warn!("Cannot open UDP socket: {}", e);
@@ -101,12 +101,11 @@ impl DhtServer {
 
         let id = NodeId::gen();
         let table = &mut RoutingTable::new(id, self.router_nodes);
-        let rpc = &mut RpcMgr::new(id);
+        let rpc = &mut RpcMgr::new(id, &udp);
         let parser = &mut Parser::new();
         let running = &mut Slab::new();
 
         let recv_buf: &mut [u8] = &mut [0; 1024];
-        let send_buf = &mut Vec::with_capacity(1024);
         let timed_out = &mut Vec::new();
 
         let mut prune_txn = time::interval(Duration::from_secs(1));
@@ -124,7 +123,7 @@ impl DhtServer {
             select! {
                 // Clear timed-out transactions
                 _ = prune_txn.tick().fuse() => {
-                    rpc.check_timeouts(table, running, send_buf, timed_out).await;
+                    rpc.check_timeouts(table, running, timed_out).await;
                 }
 
                 // Refresh table buckets
@@ -155,7 +154,7 @@ impl DhtServer {
                         }
                     };
 
-                   rpc.handle_response(msg, addr, table, running, send_buf).await;
+                   rpc.handle_response(msg, addr, table, running).await;
                 },
 
                 // Send requests
@@ -170,24 +169,24 @@ impl DhtServer {
                     let entry = running.vacant_entry();
                     let mut t = match request {
                         ClientRequest::GetPeers { info_hash, peer_tx } => {
-                            let t = DhtGetPeers::new(&info_hash, table, peer_tx, udp, entry.key());
+                            let t = DhtGetPeers::new(&info_hash, table, peer_tx, entry.key());
                             DhtTraversal::GetPeers(t)
                         },
                         ClientRequest::Bootstrap { target } => {
-                            let t = DhtBootstrap::new(&target, table, udp, entry.key());
+                            let t = DhtBootstrap::new(&target, table, entry.key());
                             DhtTraversal::Bootstrap(t)
                         },
                         ClientRequest::Announce { info_hash, peer_tx } => {
-                            let t = DhtAnnounce::new(&info_hash, table, peer_tx, udp, entry.key());
+                            let t = DhtAnnounce::new(&info_hash, table, peer_tx, entry.key());
                             DhtTraversal::Announce(t)
                         }
                         ClientRequest::Ping { id, addr } => {
-                            let t = DhtPing::new(&id, &addr, udp, entry.key());
+                            let t = DhtPing::new(&id, &addr, entry.key());
                             DhtTraversal::Ping(t)
                         }
                     };
 
-                    let done = t.add_requests(rpc, send_buf).await;
+                    let done = t.add_requests(rpc).await;
                     if !done {
                         entry.insert(t);
                     }

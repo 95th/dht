@@ -1,4 +1,5 @@
 use slab::Slab;
+use tokio::net::UdpSocket;
 
 use crate::{
     id::NodeId,
@@ -13,20 +14,24 @@ use std::{
 
 use super::request::DhtTraversal;
 
-pub struct RpcMgr {
+pub struct RpcMgr<'a> {
     txn_id: TxnId,
     pub own_id: NodeId,
     pub tokens: HashMap<SocketAddr, Vec<u8>>,
     pub txns: Transactions,
+    pub udp: &'a UdpSocket,
+    pub buf: Vec<u8>,
 }
 
-impl RpcMgr {
-    pub fn new(own_id: NodeId) -> Self {
+impl<'a> RpcMgr<'a> {
+    pub fn new(own_id: NodeId, udp: &'a UdpSocket) -> Self {
         Self {
             txn_id: TxnId(0),
             own_id,
             tokens: HashMap::new(),
             txns: Transactions::new(),
+            udp,
+            buf: Vec::with_capacity(1024),
         }
     }
 
@@ -34,13 +39,18 @@ impl RpcMgr {
         self.txn_id.next_id()
     }
 
+    pub async fn send(&mut self, addr: SocketAddr) -> anyhow::Result<()> {
+        let n = self.udp.send_to(&self.buf, addr).await?;
+        anyhow::ensure!(n == self.buf.len(), "Couldn't write the whole message");
+        Ok(())
+    }
+
     pub async fn handle_response(
         &mut self,
         msg: Msg<'_, '_>,
         addr: SocketAddr,
         table: &mut RoutingTable,
-        running: &mut Slab<DhtTraversal<'_>>,
-        buf: &mut Vec<u8>,
+        running: &mut Slab<DhtTraversal>,
     ) {
         log::debug!("Received msg: {:?}", msg);
 
@@ -56,7 +66,7 @@ impl RpcMgr {
 
                         let t = &mut running[req.traversal_id];
                         t.set_failed(&req.id, &addr);
-                        let done = t.add_requests(self, buf).await;
+                        let done = t.add_requests(self).await;
                         if done {
                             running.remove(req.traversal_id).done();
                         }
@@ -88,7 +98,7 @@ impl RpcMgr {
 
                     let t = &mut running[req.traversal_id];
                     t.set_failed(&req.id, &addr);
-                    let done = t.add_requests(self, buf).await;
+                    let done = t.add_requests(self).await;
                     if done {
                         running.remove(req.traversal_id).done();
                     }
@@ -104,7 +114,7 @@ impl RpcMgr {
 
         let t = &mut running[req.traversal_id];
         t.handle_response(&resp, &addr, table, self, req.has_id);
-        let done = t.add_requests(self, buf).await;
+        let done = t.add_requests(self).await;
         if done {
             running.remove(req.traversal_id).done();
         }
@@ -113,8 +123,7 @@ impl RpcMgr {
     pub async fn check_timeouts(
         &mut self,
         table: &mut RoutingTable,
-        running: &mut Slab<DhtTraversal<'_>>,
-        buf: &mut Vec<u8>,
+        running: &mut Slab<DhtTraversal>,
         timed_out: &mut Vec<(TxnId, Request)>,
     ) {
         let before = self.txns.pending.len();
@@ -140,7 +149,7 @@ impl RpcMgr {
 
             let t = &mut running[req.traversal_id];
             t.set_failed(&req.id, &req.addr);
-            let done = t.add_requests(self, buf).await;
+            let done = t.add_requests(self).await;
             if done {
                 running.remove(req.traversal_id).done();
             }

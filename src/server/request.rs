@@ -15,20 +15,20 @@ pub use ping::DhtPing;
 
 use super::rpc::RpcMgr;
 
-pub enum DhtTraversal<'a> {
-    GetPeers(DhtGetPeers<'a>),
-    Bootstrap(DhtBootstrap<'a>),
-    Announce(DhtAnnounce<'a>),
-    Ping(DhtPing<'a>),
+pub enum DhtTraversal {
+    GetPeers(DhtGetPeers),
+    Bootstrap(DhtBootstrap),
+    Announce(DhtAnnounce),
+    Ping(DhtPing),
 }
 
-impl<'a> DhtTraversal<'a> {
-    pub async fn add_requests(&mut self, rpc: &mut RpcMgr, buf: &mut Vec<u8>) -> bool {
+impl DhtTraversal {
+    pub async fn add_requests(&mut self, rpc: &mut RpcMgr<'_>) -> bool {
         match self {
-            DhtTraversal::GetPeers(t) => t.add_requests(rpc, buf).await,
-            DhtTraversal::Bootstrap(t) => t.add_requests(rpc, buf).await,
-            DhtTraversal::Announce(t) => t.add_requests(rpc, buf).await,
-            DhtTraversal::Ping(t) => t.add_requests(rpc, buf).await,
+            DhtTraversal::GetPeers(t) => t.add_requests(rpc).await,
+            DhtTraversal::Bootstrap(t) => t.add_requests(rpc).await,
+            DhtTraversal::Announce(t) => t.add_requests(rpc).await,
+            DhtTraversal::Ping(t) => t.add_requests(rpc).await,
         }
     }
 

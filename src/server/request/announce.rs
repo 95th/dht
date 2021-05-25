@@ -9,24 +9,22 @@ use crate::server::request::Status;
 use crate::server::RpcMgr;
 use crate::table::RoutingTable;
 use std::net::SocketAddr;
-use tokio::net::UdpSocket;
 
 use super::DhtGetPeers;
 
-pub struct DhtAnnounce<'a> {
-    inner: DhtGetPeers<'a>,
+pub struct DhtAnnounce {
+    inner: DhtGetPeers,
 }
 
-impl<'a> DhtAnnounce<'a> {
+impl DhtAnnounce {
     pub fn new(
         info_hash: &NodeId,
         table: &mut RoutingTable,
         peer_tx: oneshot::Sender<Vec<SocketAddr>>,
-        udp: &'a UdpSocket,
         traversal_id: usize,
     ) -> Self {
         Self {
-            inner: DhtGetPeers::new(info_hash, table, peer_tx, udp, traversal_id),
+            inner: DhtGetPeers::new(info_hash, table, peer_tx, traversal_id),
         }
     }
 
@@ -46,10 +44,10 @@ impl<'a> DhtAnnounce<'a> {
         self.inner.set_failed(id, addr);
     }
 
-    pub async fn add_requests(&mut self, rpc: &mut RpcMgr, buf: &mut Vec<u8>) -> bool {
+    pub async fn add_requests(&mut self, rpc: &mut RpcMgr<'_>) -> bool {
         log::trace!("Add ANNOUNCE's GET_PEERS requests");
 
-        let done = self.inner.add_requests(rpc, buf).await;
+        let done = self.inner.add_requests(rpc).await;
         if !done {
             return false;
         }
@@ -84,10 +82,10 @@ impl<'a> DhtAnnounce<'a> {
                 token,
             };
 
-            buf.clear();
-            msg.encode(buf);
+            rpc.buf.clear();
+            msg.encode(&mut rpc.buf);
 
-            match self.inner.traversal.udp.send_to(&buf, &n.addr).await {
+            match rpc.send(n.addr).await {
                 Ok(_) => {
                     log::debug!("Announced to {}", n.addr);
                     announce_count += 1;

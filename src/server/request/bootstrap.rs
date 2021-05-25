@@ -5,23 +5,17 @@ use crate::server::RpcMgr;
 use crate::table::RoutingTable;
 use ben::Encode;
 use std::net::SocketAddr;
-use tokio::net::UdpSocket;
 
 use super::traversal::Traversal;
 
-pub struct DhtBootstrap<'a> {
-    traversal: Traversal<'a>,
+pub struct DhtBootstrap {
+    traversal: Traversal,
 }
 
-impl<'a> DhtBootstrap<'a> {
-    pub fn new(
-        target: &NodeId,
-        table: &mut RoutingTable,
-        udp: &'a UdpSocket,
-        traversal_id: usize,
-    ) -> Self {
+impl DhtBootstrap {
+    pub fn new(target: &NodeId, table: &mut RoutingTable, traversal_id: usize) -> Self {
         Self {
-            traversal: Traversal::new(target, table, udp, traversal_id),
+            traversal: Traversal::new(target, table, traversal_id),
         }
     }
 
@@ -40,19 +34,21 @@ impl<'a> DhtBootstrap<'a> {
         self.traversal.set_failed(id, addr);
     }
 
-    pub async fn add_requests(&mut self, rpc: &mut RpcMgr, buf: &mut Vec<u8>) -> bool {
+    pub async fn add_requests(&mut self, rpc: &mut RpcMgr<'_>) -> bool {
         log::trace!("Add BOOTSTRAP requests");
 
         let target = self.traversal.target;
         self.traversal
-            .add_requests(rpc, buf, |txn_id, own_id, buf| {
+            .add_requests(rpc, |rpc| {
                 let msg = FindNode {
-                    txn_id,
+                    txn_id: rpc.new_txn(),
                     target: &target,
-                    id: own_id,
+                    id: &rpc.own_id,
                 };
-                msg.encode(buf);
                 log::trace!("Send {:?}", msg);
+
+                msg.encode(&mut rpc.buf);
+                msg.txn_id
             })
             .await
     }
