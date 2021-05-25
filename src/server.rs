@@ -39,7 +39,6 @@ pub enum ClientRequest {
     },
 }
 
-#[derive(Clone)]
 pub struct Dht {
     tx: mpsc::Sender<ClientRequest>,
 }
