@@ -1,6 +1,6 @@
 use crate::id::NodeId;
 use ben::{Encode, Encoder};
-use std::net::SocketAddr;
+use std::net::{Ipv4Addr, SocketAddr};
 
 bitflags::bitflags! {
     pub struct ContactStatus: u8 {
@@ -130,11 +130,12 @@ impl<'a> Iterator for CompactNodes<'a> {
             let id = &*(p as *const NodeId);
             let addr = &*(p.add(20) as *const [u8; 4]);
             let port = u16::from_be_bytes(*(p.add(24) as *const [u8; 2]));
+            let addr = Ipv4Addr::from(*addr).to_ipv6_mapped();
 
             self.buf = &self.buf[26..];
             Some(ContactRef {
                 id,
-                addr: SocketAddr::from((*addr, port)),
+                addr: SocketAddr::from((addr, port)),
             })
         }
     }
