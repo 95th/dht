@@ -23,9 +23,10 @@ impl<'a> DhtAnnounce<'a> {
         table: &mut RoutingTable,
         peer_tx: oneshot::Sender<Vec<SocketAddr>>,
         udp: &'a UdpSocket,
+        traversal_id: usize,
     ) -> Self {
         Self {
-            inner: DhtGetPeers::new(info_hash, table, peer_tx, udp),
+            inner: DhtGetPeers::new(info_hash, table, peer_tx, udp, traversal_id),
         }
     }
 
@@ -45,15 +46,10 @@ impl<'a> DhtAnnounce<'a> {
         self.inner.set_failed(id, addr);
     }
 
-    pub async fn add_requests(
-        &mut self,
-        rpc: &mut RpcMgr,
-        buf: &mut Vec<u8>,
-        traversal_id: usize,
-    ) -> bool {
+    pub async fn add_requests(&mut self, rpc: &mut RpcMgr, buf: &mut Vec<u8>) -> bool {
         log::trace!("Add ANNOUNCE's GET_PEERS requests");
 
-        let done = self.inner.add_requests(rpc, buf, traversal_id).await;
+        let done = self.inner.add_requests(rpc, buf).await;
         if !done {
             return false;
         }

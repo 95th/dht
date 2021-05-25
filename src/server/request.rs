@@ -23,16 +23,11 @@ pub enum DhtTraversal<'a> {
 }
 
 impl<'a> DhtTraversal<'a> {
-    pub async fn add_requests(
-        &mut self,
-        rpc: &mut RpcMgr,
-        buf: &mut Vec<u8>,
-        traversal_id: usize,
-    ) -> bool {
+    pub async fn add_requests(&mut self, rpc: &mut RpcMgr, buf: &mut Vec<u8>) -> bool {
         match self {
-            DhtTraversal::GetPeers(t) => t.add_requests(rpc, buf, traversal_id).await,
-            DhtTraversal::Bootstrap(t) => t.add_requests(rpc, buf, traversal_id).await,
-            DhtTraversal::Announce(t) => t.add_requests(rpc, buf, traversal_id).await,
+            DhtTraversal::GetPeers(t) => t.add_requests(rpc, buf).await,
+            DhtTraversal::Bootstrap(t) => t.add_requests(rpc, buf).await,
+            DhtTraversal::Announce(t) => t.add_requests(rpc, buf).await,
             DhtTraversal::Ping(t) => t.add_requests(rpc, buf).await,
         }
     }

@@ -56,7 +56,7 @@ impl RpcMgr {
 
                         let t = &mut running[req.traversal_id];
                         t.set_failed(&req.id, &addr);
-                        let done = t.add_requests(self, buf, req.traversal_id).await;
+                        let done = t.add_requests(self, buf).await;
                         if done {
                             running.remove(req.traversal_id).done();
                         }
@@ -88,7 +88,7 @@ impl RpcMgr {
 
                     let t = &mut running[req.traversal_id];
                     t.set_failed(&req.id, &addr);
-                    let done = t.add_requests(self, buf, req.traversal_id).await;
+                    let done = t.add_requests(self, buf).await;
                     if done {
                         running.remove(req.traversal_id).done();
                     }
@@ -104,17 +104,18 @@ impl RpcMgr {
 
         let t = &mut running[req.traversal_id];
         t.handle_response(&resp, &addr, table, self, req.has_id);
-        let done = t.add_requests(self, buf, req.traversal_id).await;
+        let done = t.add_requests(self, buf).await;
         if done {
             running.remove(req.traversal_id).done();
         }
     }
 
-    pub async fn check_timed_out_txns(
+    pub async fn check_timeouts(
         &mut self,
         table: &mut RoutingTable,
         running: &mut Slab<DhtTraversal<'_>>,
         buf: &mut Vec<u8>,
+        timed_out: &mut Vec<(TxnId, Request)>,
     ) {
         let before = self.txns.pending.len();
         let cutoff = Instant::now() - self.txns.timeout;
@@ -129,13 +130,9 @@ impl RpcMgr {
             assert!(running.is_empty());
         }
 
-        let out = self
-            .txns
-            .pending
-            .drain_filter(|_, req| req.sent < cutoff)
-            .collect::<Vec<_>>();
+        timed_out.extend(self.txns.pending.drain_filter(|_, req| req.sent < cutoff));
 
-        for (txn_id, req) in out {
+        for (txn_id, req) in timed_out.drain(..) {
             log::trace!("Txn {:?} expired", txn_id);
             if req.has_id {
                 table.failed(&req.id);
@@ -143,7 +140,7 @@ impl RpcMgr {
 
             let t = &mut running[req.traversal_id];
             t.set_failed(&req.id, &req.addr);
-            let done = t.add_requests(self, buf, req.traversal_id).await;
+            let done = t.add_requests(self, buf).await;
             if done {
                 running.remove(req.traversal_id).done();
             }

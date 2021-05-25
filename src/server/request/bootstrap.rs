@@ -14,9 +14,14 @@ pub struct DhtBootstrap<'a> {
 }
 
 impl<'a> DhtBootstrap<'a> {
-    pub fn new(target: &NodeId, table: &mut RoutingTable, udp: &'a UdpSocket) -> Self {
+    pub fn new(
+        target: &NodeId,
+        table: &mut RoutingTable,
+        udp: &'a UdpSocket,
+        traversal_id: usize,
+    ) -> Self {
         Self {
-            traversal: Traversal::new(target, table, udp),
+            traversal: Traversal::new(target, table, udp, traversal_id),
         }
     }
 
@@ -35,17 +40,12 @@ impl<'a> DhtBootstrap<'a> {
         self.traversal.set_failed(id, addr);
     }
 
-    pub async fn add_requests(
-        &mut self,
-        rpc: &mut RpcMgr,
-        buf: &mut Vec<u8>,
-        traversal_id: usize,
-    ) -> bool {
+    pub async fn add_requests(&mut self, rpc: &mut RpcMgr, buf: &mut Vec<u8>) -> bool {
         log::trace!("Add BOOTSTRAP requests");
 
         let target = self.traversal.target;
         self.traversal
-            .add_requests(rpc, buf, traversal_id, |txn_id, own_id, buf| {
+            .add_requests(rpc, buf, |txn_id, own_id, buf| {
                 let msg = FindNode {
                     txn_id,
                     target: &target,

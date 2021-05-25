@@ -107,6 +107,7 @@ impl DhtServer {
 
         let recv_buf: &mut [u8] = &mut [0; 1024];
         let send_buf = &mut Vec::with_capacity(1024);
+        let timed_out = &mut Vec::new();
 
         let mut prune_txn = time::interval(Duration::from_secs(1));
         let mut table_refresh = time::interval(Duration::from_secs(60));
@@ -123,7 +124,7 @@ impl DhtServer {
             select! {
                 // Clear timed-out transactions
                 _ = prune_txn.tick().fuse() => {
-                    rpc.check_timed_out_txns(table, running, send_buf).await;
+                    rpc.check_timeouts(table, running, send_buf, timed_out).await;
                 }
 
                 // Refresh table buckets
@@ -166,27 +167,27 @@ impl DhtServer {
                         None => break,
                     };
 
+                    let entry = running.vacant_entry();
                     let mut t = match request {
                         ClientRequest::GetPeers { info_hash, peer_tx } => {
-                            let t = DhtGetPeers::new(&info_hash, table, peer_tx, udp);
+                            let t = DhtGetPeers::new(&info_hash, table, peer_tx, udp, entry.key());
                             DhtTraversal::GetPeers(t)
                         },
                         ClientRequest::Bootstrap { target } => {
-                            let t = DhtBootstrap::new(&target, table, udp);
+                            let t = DhtBootstrap::new(&target, table, udp, entry.key());
                             DhtTraversal::Bootstrap(t)
                         },
                         ClientRequest::Announce { info_hash, peer_tx } => {
-                            let t = DhtAnnounce::new(&info_hash, table, peer_tx, udp);
+                            let t = DhtAnnounce::new(&info_hash, table, peer_tx, udp, entry.key());
                             DhtTraversal::Announce(t)
                         }
                         ClientRequest::Ping { id, addr } => {
-                            let t = DhtPing::new(&id, &addr, udp);
+                            let t = DhtPing::new(&id, &addr, udp, entry.key());
                             DhtTraversal::Ping(t)
                         }
                     };
 
-                    let entry = running.vacant_entry();
-                    let done = t.add_requests(rpc, send_buf, entry.key()).await;
+                    let done = t.add_requests(rpc, send_buf).await;
                     if !done {
                         entry.insert(t);
                     }

@@ -23,9 +23,10 @@ impl<'a> DhtGetPeers<'a> {
         table: &RoutingTable,
         peer_tx: oneshot::Sender<Vec<SocketAddr>>,
         udp: &'a UdpSocket,
+        traversal_id: usize,
     ) -> Self {
         Self {
-            traversal: Traversal::new(info_hash, table, udp),
+            traversal: Traversal::new(info_hash, table, udp, traversal_id),
             peers: HashSet::new(),
             peer_tx,
         }
@@ -56,17 +57,12 @@ impl<'a> DhtGetPeers<'a> {
         self.traversal.set_failed(id, addr);
     }
 
-    pub async fn add_requests(
-        &mut self,
-        rpc: &mut RpcMgr,
-        buf: &mut Vec<u8>,
-        traversal_id: usize,
-    ) -> bool {
+    pub async fn add_requests(&mut self, rpc: &mut RpcMgr, buf: &mut Vec<u8>) -> bool {
         log::trace!("Add GET_PEERS requests");
 
         let info_hash = self.traversal.target;
         self.traversal
-            .add_requests(rpc, buf, traversal_id, |txn_id, own_id, buf| {
+            .add_requests(rpc, buf, |txn_id, own_id, buf| {
                 let msg = GetPeers {
                     txn_id,
                     id: own_id,

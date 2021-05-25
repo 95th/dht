@@ -18,10 +18,16 @@ pub struct Traversal<'a> {
     pub branch_factor: u8,
     pub invoke_count: u8,
     pub udp: &'a UdpSocket,
+    pub traversal_id: usize,
 }
 
 impl<'a> Traversal<'a> {
-    pub fn new(target: &NodeId, table: &RoutingTable, udp: &'a UdpSocket) -> Self {
+    pub fn new(
+        target: &NodeId,
+        table: &RoutingTable,
+        udp: &'a UdpSocket,
+        traversal_id: usize,
+    ) -> Self {
         let mut closest = Vec::with_capacity(Bucket::MAX_LEN);
         table.find_closest(target, &mut closest, Bucket::MAX_LEN);
 
@@ -46,6 +52,7 @@ impl<'a> Traversal<'a> {
             branch_factor: 3,
             invoke_count: 0,
             udp,
+            traversal_id,
         }
     }
 
@@ -115,7 +122,6 @@ impl<'a> Traversal<'a> {
         &mut self,
         rpc: &mut RpcMgr,
         buf: &mut Vec<u8>,
-        traversal_id: usize,
         mut encode_msg: F,
     ) -> bool
     where
@@ -154,7 +160,7 @@ impl<'a> Traversal<'a> {
             match self.udp.send_to(buf, n.addr).await {
                 Ok(count) if count == buf.len() => {
                     n.status.insert(Status::QUERIED);
-                    rpc.txns.insert(txn_id, &n.id, &n.addr, traversal_id);
+                    rpc.txns.insert(txn_id, &n.id, &n.addr, self.traversal_id);
                     outstanding += 1;
                     self.invoke_count += 1;
                 }
