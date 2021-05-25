@@ -48,6 +48,27 @@ impl RpcMgr {
 
         let resp = match msg {
             Msg::Response(x) => x,
+            Msg::Error(e) => {
+                match self.txns.remove(e.txn_id) {
+                    Some(req) => {
+                        log::warn!("Error response from {}: {:?}", addr, e);
+                        if req.has_id {
+                            table.failed(&req.id);
+                        }
+
+                        let t = &mut running[req.traversal_id];
+                        t.failed(&req.id);
+                        let done = t.add_requests(self, udp, buf, req.traversal_id).await;
+                        if done {
+                            running.remove(req.traversal_id);
+                        }
+                    }
+                    None => {
+                        log::warn!("Response for unrecognized txn: {:?}", e.txn_id);
+                    }
+                }
+                return;
+            }
             x => {
                 log::warn!("Unhandled msg: {:?}", x);
                 return;
@@ -104,6 +125,16 @@ impl RpcMgr {
     ) {
         let before = self.txns.pending.len();
         let cutoff = Instant::now() - self.txns.timeout;
+
+        log::debug!(
+            "{} pending txns in {} traversals",
+            self.txns.pending.len(),
+            running.len()
+        );
+
+        if self.txns.pending.is_empty() {
+            assert!(running.is_empty());
+        }
 
         let out = self
             .txns

@@ -138,6 +138,7 @@ impl Traversal {
             };
 
             let txn_id = rpc.new_txn();
+            buf.clear();
             encode_msg(txn_id, &rpc.own_id, buf);
 
             log::trace!("Send to {}", n.addr);

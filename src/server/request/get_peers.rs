@@ -72,7 +72,6 @@ impl DhtGetPeers {
                     id: own_id,
                     info_hash: &info_hash,
                 };
-                buf.clear();
                 msg.encode(buf);
                 log::trace!("Send {:?}", msg);
             })

@@ -22,7 +22,7 @@ pub struct Response<'a, 'p> {
 #[derive(Debug)]
 pub struct ErrorResponse<'a, 'p> {
     pub txn_id: TxnId,
-    pub list: List<'a, 'p>,
+    pub list: Option<List<'a, 'p>>,
 }
 
 #[derive(Debug)]
@@ -89,7 +89,8 @@ impl<'a, 'p> Decode<'a, 'p> for Msg<'a, 'p> {
                 })
             }
             b"e" => {
-                let list = check!(dict.get_list("r"), "Error list is required");
+                log::trace!("Error: {:?}", dict);
+                let list = dict.get_list("r");
                 Msg::Error(ErrorResponse { txn_id, list })
             }
             other => {

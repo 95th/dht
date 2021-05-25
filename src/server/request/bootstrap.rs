@@ -52,7 +52,6 @@ impl DhtBootstrap {
                     target: &target,
                     id: own_id,
                 };
-                buf.clear();
                 msg.encode(buf);
                 log::trace!("Send {:?}", msg);
             })
