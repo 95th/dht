@@ -39,6 +39,7 @@ pub enum ClientRequest {
     },
 }
 
+#[derive(Clone)]
 pub struct Dht {
     tx: mpsc::Sender<ClientRequest>,
 }
@@ -82,7 +83,7 @@ impl Dht {
     }
 }
 
-pub struct DhtServer {
+struct DhtServer {
     port: u16,
     router_nodes: Vec<SocketAddr>,
     tx: mpsc::Sender<ClientRequest>,
