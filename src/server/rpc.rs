@@ -54,7 +54,7 @@ impl RpcMgr {
             }
         };
 
-        let request = match self.txns.remove(resp.txn_id) {
+        let req = match self.txns.remove(resp.txn_id) {
             Some(req) => {
                 if req.has_id && &req.id == resp.id {
                     table.heard_from(&req.id);
@@ -65,8 +65,14 @@ impl RpcMgr {
                         &req.id,
                         &resp.id
                     );
-                    running[req.traversal_id].failed(&req.id);
                     table.failed(&req.id);
+
+                    let t = &mut running[req.traversal_id];
+                    t.failed(&req.id);
+                    let done = t.add_requests(self, udp, buf, req.traversal_id).await;
+                    if done {
+                        running.remove(req.traversal_id);
+                    }
                     return;
                 }
                 req
@@ -77,15 +83,15 @@ impl RpcMgr {
             }
         };
 
-        let traversal = &mut running[request.traversal_id];
-        traversal.handle_response(&resp, &addr, table, self, request.has_id);
+        let traversal = &mut running[req.traversal_id];
+        traversal.handle_response(&resp, &addr, table, self, req.has_id);
 
         let done = traversal
-            .add_requests(self, udp, buf, request.traversal_id)
+            .add_requests(self, udp, buf, req.traversal_id)
             .await;
 
         if done {
-            running.remove(request.traversal_id);
+            running.remove(req.traversal_id);
         }
     }
 
@@ -102,20 +108,20 @@ impl RpcMgr {
         let out = self
             .txns
             .pending
-            .drain_filter(|_, request| request.sent < cutoff)
+            .drain_filter(|_, req| req.sent < cutoff)
             .collect::<Vec<_>>();
 
-        for (txn_id, request) in out {
+        for (txn_id, req) in out {
             log::trace!("Txn {:?} expired", txn_id);
-            if request.has_id {
-                table.failed(&request.id);
+            if req.has_id {
+                table.failed(&req.id);
             }
 
-            let t = &mut running[request.traversal_id];
-            t.failed(&request.id);
-            let done = t.add_requests(self, udp, buf, request.traversal_id).await;
+            let t = &mut running[req.traversal_id];
+            t.failed(&req.id);
+            let done = t.add_requests(self, udp, buf, req.traversal_id).await;
             if done {
-                running.remove(request.traversal_id);
+                running.remove(req.traversal_id);
             }
         }
 
