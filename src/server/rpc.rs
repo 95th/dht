@@ -55,10 +55,10 @@ impl RpcMgr {
                         }
 
                         let t = &mut running[req.traversal_id];
-                        t.failed(&req.id, &addr);
+                        t.set_failed(&req.id, &addr);
                         let done = t.add_requests(self, buf, req.traversal_id).await;
                         if done {
-                            running.remove(req.traversal_id);
+                            running.remove(req.traversal_id).done();
                         }
                     }
                     None => {
@@ -87,10 +87,10 @@ impl RpcMgr {
                     table.failed(&req.id);
 
                     let t = &mut running[req.traversal_id];
-                    t.failed(&req.id, &addr);
+                    t.set_failed(&req.id, &addr);
                     let done = t.add_requests(self, buf, req.traversal_id).await;
                     if done {
-                        running.remove(req.traversal_id);
+                        running.remove(req.traversal_id).done();
                     }
                     return;
                 }
@@ -102,13 +102,11 @@ impl RpcMgr {
             }
         };
 
-        let traversal = &mut running[req.traversal_id];
-        traversal.handle_response(&resp, &addr, table, self, req.has_id);
-
-        let done = traversal.add_requests(self, buf, req.traversal_id).await;
-
+        let t = &mut running[req.traversal_id];
+        t.handle_response(&resp, &addr, table, self, req.has_id);
+        let done = t.add_requests(self, buf, req.traversal_id).await;
         if done {
-            running.remove(req.traversal_id);
+            running.remove(req.traversal_id).done();
         }
     }
 
@@ -144,10 +142,10 @@ impl RpcMgr {
             }
 
             let t = &mut running[req.traversal_id];
-            t.failed(&req.id, &req.addr);
+            t.set_failed(&req.id, &req.addr);
             let done = t.add_requests(self, buf, req.traversal_id).await;
             if done {
-                running.remove(req.traversal_id);
+                running.remove(req.traversal_id).done();
             }
         }
 

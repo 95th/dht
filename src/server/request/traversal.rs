@@ -100,7 +100,7 @@ impl<'a> Traversal<'a> {
         log::trace!("Invoke count after: {}", self.invoke_count);
     }
 
-    pub fn failed(&mut self, id: &NodeId, addr: &SocketAddr) {
+    pub fn set_failed(&mut self, id: &NodeId, addr: &SocketAddr) {
         if let Some(node) = self
             .nodes
             .iter_mut()

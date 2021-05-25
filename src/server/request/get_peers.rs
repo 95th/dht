@@ -14,7 +14,7 @@ use super::traversal::Traversal;
 pub struct DhtGetPeers<'a> {
     pub traversal: Traversal<'a>,
     peers: HashSet<SocketAddr>,
-    peer_tx: Option<oneshot::Sender<Vec<SocketAddr>>>,
+    peer_tx: oneshot::Sender<Vec<SocketAddr>>,
 }
 
 impl<'a> DhtGetPeers<'a> {
@@ -27,7 +27,7 @@ impl<'a> DhtGetPeers<'a> {
         Self {
             traversal: Traversal::new(info_hash, table, udp),
             peers: HashSet::new(),
-            peer_tx: Some(peer_tx),
+            peer_tx,
         }
     }
 
@@ -52,8 +52,8 @@ impl<'a> DhtGetPeers<'a> {
         }
     }
 
-    pub fn failed(&mut self, id: &NodeId, addr: &SocketAddr) {
-        self.traversal.failed(id, addr);
+    pub fn set_failed(&mut self, id: &NodeId, addr: &SocketAddr) {
+        self.traversal.set_failed(id, addr);
     }
 
     pub async fn add_requests(
@@ -77,15 +77,9 @@ impl<'a> DhtGetPeers<'a> {
             })
             .await
     }
-}
 
-impl Drop for DhtGetPeers<'_> {
-    fn drop(&mut self) {
-        self.peer_tx
-            .take()
-            .unwrap()
-            .send(self.peers.drain().collect())
-            .unwrap()
+    pub fn done(self) {
+        self.peer_tx.send(self.peers.into_iter().collect()).unwrap()
     }
 }
 

@@ -34,7 +34,7 @@ pub enum ClientRequest {
         id: NodeId,
         addr: SocketAddr,
     },
-    BootStrap {
+    Bootstrap {
         target: NodeId,
     },
 }
@@ -115,7 +115,7 @@ impl DhtServer {
         let mut rx = self.rx;
 
         // Bootstrap on ourselves
-        tx.send(ClientRequest::BootStrap { target: id })
+        tx.send(ClientRequest::Bootstrap { target: id })
             .await
             .unwrap();
 
@@ -166,29 +166,29 @@ impl DhtServer {
                         None => break,
                     };
 
-                    let traversal_id = match request {
+                    let mut t = match request {
                         ClientRequest::GetPeers { info_hash, peer_tx } => {
-                            let x = DhtGetPeers::new(&info_hash, table, peer_tx, udp);
-                            running.insert(DhtTraversal::GetPeers(x))
+                            let t = DhtGetPeers::new(&info_hash, table, peer_tx, udp);
+                            DhtTraversal::GetPeers(t)
                         },
-                        ClientRequest::BootStrap { target } => {
-                            let x = DhtBootstrap::new(&target, table, udp);
-                            running.insert(DhtTraversal::Bootstrap(x))
+                        ClientRequest::Bootstrap { target } => {
+                            let t = DhtBootstrap::new(&target, table, udp);
+                            DhtTraversal::Bootstrap(t)
                         },
                         ClientRequest::Announce { info_hash, peer_tx } => {
-                            let x = DhtAnnounce::new(&info_hash, table, peer_tx, udp);
-                            running.insert(DhtTraversal::Announce(x))
+                            let t = DhtAnnounce::new(&info_hash, table, peer_tx, udp);
+                            DhtTraversal::Announce(t)
                         }
                         ClientRequest::Ping { id, addr } => {
-                            let x = DhtPing::new(&id, &addr, udp);
-                            running.insert(DhtTraversal::Ping(x))
+                            let t = DhtPing::new(&id, &addr, udp);
+                            DhtTraversal::Ping(t)
                         }
                     };
 
-                    let t = &mut running[traversal_id];
-                    let done = t.add_requests(rpc, send_buf, traversal_id).await;
-                    if done {
-                        running.remove(traversal_id);
+                    let entry = running.vacant_entry();
+                    let done = t.add_requests(rpc, send_buf, entry.key()).await;
+                    if !done {
+                        entry.insert(t);
                     }
                 },
                 complete => break,

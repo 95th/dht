@@ -31,8 +31,8 @@ impl<'a> DhtBootstrap<'a> {
         self.traversal.handle_response(resp, addr, table, has_id);
     }
 
-    pub fn failed(&mut self, id: &NodeId, addr: &SocketAddr) {
-        self.traversal.failed(id, addr);
+    pub fn set_failed(&mut self, id: &NodeId, addr: &SocketAddr) {
+        self.traversal.set_failed(id, addr);
     }
 
     pub async fn add_requests(
@@ -56,4 +56,6 @@ impl<'a> DhtBootstrap<'a> {
             })
             .await
     }
+
+    pub fn done(self) {}
 }

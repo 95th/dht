@@ -45,7 +45,7 @@ impl RoutingTable {
             })
         } else {
             let id = NodeId::gen_lz(bucket_no);
-            Some(ClientRequest::BootStrap { target: id })
+            Some(ClientRequest::Bootstrap { target: id })
         }
     }
 

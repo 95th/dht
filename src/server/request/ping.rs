@@ -31,7 +31,7 @@ impl<'a> DhtPing<'a> {
         }
     }
 
-    pub fn failed(&mut self, id: &NodeId) {
+    pub fn set_failed(&mut self, id: &NodeId) {
         if &self.node.id == id {
             self.node.status.insert(Status::FAILED);
         }
@@ -87,4 +87,6 @@ impl<'a> DhtPing<'a> {
             }
         }
     }
+
+    pub fn done(self) {}
 }

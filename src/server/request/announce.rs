@@ -41,8 +41,8 @@ impl<'a> DhtAnnounce<'a> {
         self.inner.handle_response(resp, addr, table, rpc, has_id);
     }
 
-    pub fn failed(&mut self, id: &NodeId, addr: &SocketAddr) {
-        self.inner.failed(id, addr);
+    pub fn set_failed(&mut self, id: &NodeId, addr: &SocketAddr) {
+        self.inner.set_failed(id, addr);
     }
 
     pub async fn add_requests(
@@ -107,5 +107,9 @@ impl<'a> DhtAnnounce<'a> {
         }
 
         true
+    }
+
+    pub fn done(self) {
+        self.inner.done()
     }
 }
