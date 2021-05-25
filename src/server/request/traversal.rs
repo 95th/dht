@@ -12,15 +12,16 @@ use crate::{
 
 use super::{DhtNode, Status};
 
-pub struct Traversal {
+pub struct Traversal<'a> {
     pub target: NodeId,
     pub nodes: Vec<DhtNode>,
     pub branch_factor: u8,
     pub invoke_count: u8,
+    pub udp: &'a UdpSocket,
 }
 
-impl Traversal {
-    pub fn new(target: &NodeId, table: &RoutingTable) -> Self {
+impl<'a> Traversal<'a> {
+    pub fn new(target: &NodeId, table: &RoutingTable, udp: &'a UdpSocket) -> Self {
         let mut closest = Vec::with_capacity(Bucket::MAX_LEN);
         table.find_closest(target, &mut closest, Bucket::MAX_LEN);
 
@@ -44,6 +45,7 @@ impl Traversal {
             nodes,
             branch_factor: 3,
             invoke_count: 0,
+            udp,
         }
     }
 
@@ -54,6 +56,7 @@ impl Traversal {
         table: &mut RoutingTable,
         has_id: bool,
     ) {
+        log::trace!("Invoke count: {}", self.invoke_count);
         if has_id {
             if let Some(node) = self.nodes.iter_mut().find(|node| &node.id == resp.id) {
                 node.status.insert(Status::ALIVE);
@@ -67,6 +70,7 @@ impl Traversal {
             }
         } else if let Some(node) = self.nodes.iter_mut().find(|node| &node.addr == addr) {
             node.id = *resp.id;
+            node.status.insert(Status::ALIVE);
             self.invoke_count -= 1;
         }
 
@@ -93,10 +97,15 @@ impl Traversal {
         }
 
         self.nodes.truncate(100);
+        log::trace!("Invoke count after: {}", self.invoke_count);
     }
 
-    pub fn failed(&mut self, id: &NodeId) {
-        if let Some(node) = self.nodes.iter_mut().find(|node| &node.id == id) {
+    pub fn failed(&mut self, id: &NodeId, addr: &SocketAddr) {
+        if let Some(node) = self
+            .nodes
+            .iter_mut()
+            .find(|node| &node.id == id || &node.addr == addr)
+        {
             node.status.insert(Status::FAILED);
             self.invoke_count -= 1;
         }
@@ -105,7 +114,6 @@ impl Traversal {
     pub async fn add_requests<F>(
         &mut self,
         rpc: &mut RpcMgr,
-        udp: &UdpSocket,
         buf: &mut Vec<u8>,
         traversal_id: usize,
         mut encode_msg: F,
@@ -143,10 +151,10 @@ impl Traversal {
 
             log::trace!("Send to {}", n.addr);
 
-            match udp.send_to(buf, n.addr).await {
+            match self.udp.send_to(buf, n.addr).await {
                 Ok(count) if count == buf.len() => {
                     n.status.insert(Status::QUERIED);
-                    rpc.txns.insert(txn_id, &n.id, traversal_id);
+                    rpc.txns.insert(txn_id, &n.id, &n.addr, traversal_id);
                     outstanding += 1;
                     self.invoke_count += 1;
                 }

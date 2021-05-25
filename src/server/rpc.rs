@@ -1,5 +1,4 @@
 use slab::Slab;
-use tokio::net::UdpSocket;
 
 use crate::{
     id::NodeId,
@@ -40,8 +39,7 @@ impl RpcMgr {
         msg: Msg<'_, '_>,
         addr: SocketAddr,
         table: &mut RoutingTable,
-        udp: &UdpSocket,
-        running: &mut Slab<DhtTraversal>,
+        running: &mut Slab<DhtTraversal<'_>>,
         buf: &mut Vec<u8>,
     ) {
         log::debug!("Received msg: {:?}", msg);
@@ -57,8 +55,8 @@ impl RpcMgr {
                         }
 
                         let t = &mut running[req.traversal_id];
-                        t.failed(&req.id);
-                        let done = t.add_requests(self, udp, buf, req.traversal_id).await;
+                        t.failed(&req.id, &addr);
+                        let done = t.add_requests(self, buf, req.traversal_id).await;
                         if done {
                             running.remove(req.traversal_id);
                         }
@@ -89,8 +87,8 @@ impl RpcMgr {
                     table.failed(&req.id);
 
                     let t = &mut running[req.traversal_id];
-                    t.failed(&req.id);
-                    let done = t.add_requests(self, udp, buf, req.traversal_id).await;
+                    t.failed(&req.id, &addr);
+                    let done = t.add_requests(self, buf, req.traversal_id).await;
                     if done {
                         running.remove(req.traversal_id);
                     }
@@ -107,9 +105,7 @@ impl RpcMgr {
         let traversal = &mut running[req.traversal_id];
         traversal.handle_response(&resp, &addr, table, self, req.has_id);
 
-        let done = traversal
-            .add_requests(self, udp, buf, req.traversal_id)
-            .await;
+        let done = traversal.add_requests(self, buf, req.traversal_id).await;
 
         if done {
             running.remove(req.traversal_id);
@@ -119,8 +115,7 @@ impl RpcMgr {
     pub async fn check_timed_out_txns(
         &mut self,
         table: &mut RoutingTable,
-        running: &mut Slab<DhtTraversal>,
-        udp: &UdpSocket,
+        running: &mut Slab<DhtTraversal<'_>>,
         buf: &mut Vec<u8>,
     ) {
         let before = self.txns.pending.len();
@@ -149,8 +144,8 @@ impl RpcMgr {
             }
 
             let t = &mut running[req.traversal_id];
-            t.failed(&req.id);
-            let done = t.add_requests(self, udp, buf, req.traversal_id).await;
+            t.failed(&req.id, &req.addr);
+            let done = t.add_requests(self, buf, req.traversal_id).await;
             if done {
                 running.remove(req.traversal_id);
             }
@@ -166,15 +161,17 @@ impl RpcMgr {
 
 pub struct Request {
     pub id: NodeId,
+    pub addr: SocketAddr,
     pub sent: Instant,
     pub has_id: bool,
     pub traversal_id: usize,
 }
 
 impl Request {
-    pub fn new(id: &NodeId, traversal_id: usize) -> Self {
+    pub fn new(id: &NodeId, addr: &SocketAddr, traversal_id: usize) -> Self {
         Self {
             id: if id.is_zero() { NodeId::gen() } else { *id },
+            addr: *addr,
             sent: Instant::now(),
             has_id: !id.is_zero(),
             traversal_id,
@@ -199,8 +196,9 @@ impl Transactions {
         }
     }
 
-    pub fn insert(&mut self, txn_id: TxnId, id: &NodeId, traversal_id: usize) {
-        self.pending.insert(txn_id, Request::new(id, traversal_id));
+    pub fn insert(&mut self, txn_id: TxnId, id: &NodeId, addr: &SocketAddr, traversal_id: usize) {
+        self.pending
+            .insert(txn_id, Request::new(id, addr, traversal_id));
     }
 
     pub fn remove(&mut self, txn_id: TxnId) -> Option<Request> {

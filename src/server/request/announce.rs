@@ -13,18 +13,19 @@ use tokio::net::UdpSocket;
 
 use super::DhtGetPeers;
 
-pub struct DhtAnnounce {
-    inner: DhtGetPeers,
+pub struct DhtAnnounce<'a> {
+    inner: DhtGetPeers<'a>,
 }
 
-impl DhtAnnounce {
+impl<'a> DhtAnnounce<'a> {
     pub fn new(
         info_hash: &NodeId,
         table: &mut RoutingTable,
         peer_tx: oneshot::Sender<Vec<SocketAddr>>,
+        udp: &'a UdpSocket,
     ) -> Self {
         Self {
-            inner: DhtGetPeers::new(info_hash, table, peer_tx),
+            inner: DhtGetPeers::new(info_hash, table, peer_tx, udp),
         }
     }
 
@@ -40,20 +41,19 @@ impl DhtAnnounce {
         self.inner.handle_response(resp, addr, table, rpc, has_id);
     }
 
-    pub fn failed(&mut self, id: &NodeId) {
-        self.inner.failed(id);
+    pub fn failed(&mut self, id: &NodeId, addr: &SocketAddr) {
+        self.inner.failed(id, addr);
     }
 
     pub async fn add_requests(
         &mut self,
         rpc: &mut RpcMgr,
-        udp: &UdpSocket,
         buf: &mut Vec<u8>,
         traversal_id: usize,
     ) -> bool {
         log::trace!("Add ANNOUNCE's GET_PEERS requests");
 
-        let done = self.inner.add_requests(rpc, udp, buf, traversal_id).await;
+        let done = self.inner.add_requests(rpc, buf, traversal_id).await;
         if !done {
             return false;
         }
@@ -91,7 +91,7 @@ impl DhtAnnounce {
             buf.clear();
             msg.encode(buf);
 
-            match udp.send_to(&buf, &n.addr).await {
+            match self.inner.traversal.udp.send_to(&buf, &n.addr).await {
                 Ok(_) => {
                     log::debug!("Announced to {}", n.addr);
                     announce_count += 1;

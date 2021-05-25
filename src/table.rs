@@ -1,5 +1,6 @@
 use crate::contact::{Contact, ContactRef, ContactStatus};
 use crate::id::NodeId;
+use crate::util::to_ipv6;
 use crate::{
     bucket::{Bucket, BucketResult},
     server::ClientRequest,
@@ -20,7 +21,7 @@ impl RoutingTable {
         Self {
             own_id,
             buckets: vec![Bucket::new()],
-            router_nodes: router_nodes.into_iter().collect(),
+            router_nodes: router_nodes.into_iter().map(to_ipv6).collect(),
         }
     }
 

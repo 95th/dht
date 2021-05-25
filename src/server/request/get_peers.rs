@@ -11,20 +11,21 @@ use tokio::net::UdpSocket;
 
 use super::traversal::Traversal;
 
-pub struct DhtGetPeers {
-    pub traversal: Traversal,
+pub struct DhtGetPeers<'a> {
+    pub traversal: Traversal<'a>,
     peers: HashSet<SocketAddr>,
     peer_tx: Option<oneshot::Sender<Vec<SocketAddr>>>,
 }
 
-impl DhtGetPeers {
+impl<'a> DhtGetPeers<'a> {
     pub fn new(
         info_hash: &NodeId,
         table: &RoutingTable,
         peer_tx: oneshot::Sender<Vec<SocketAddr>>,
+        udp: &'a UdpSocket,
     ) -> Self {
         Self {
-            traversal: Traversal::new(info_hash, table),
+            traversal: Traversal::new(info_hash, table, udp),
             peers: HashSet::new(),
             peer_tx: Some(peer_tx),
         }
@@ -51,14 +52,13 @@ impl DhtGetPeers {
         }
     }
 
-    pub fn failed(&mut self, id: &NodeId) {
-        self.traversal.failed(id);
+    pub fn failed(&mut self, id: &NodeId, addr: &SocketAddr) {
+        self.traversal.failed(id, addr);
     }
 
     pub async fn add_requests(
         &mut self,
         rpc: &mut RpcMgr,
-        udp: &UdpSocket,
         buf: &mut Vec<u8>,
         traversal_id: usize,
     ) -> bool {
@@ -66,7 +66,7 @@ impl DhtGetPeers {
 
         let info_hash = self.traversal.target;
         self.traversal
-            .add_requests(rpc, udp, buf, traversal_id, |txn_id, own_id, buf| {
+            .add_requests(rpc, buf, traversal_id, |txn_id, own_id, buf| {
                 let msg = GetPeers {
                     txn_id,
                     id: own_id,
@@ -79,7 +79,7 @@ impl DhtGetPeers {
     }
 }
 
-impl Drop for DhtGetPeers {
+impl Drop for DhtGetPeers<'_> {
     fn drop(&mut self) {
         self.peer_tx
             .take()

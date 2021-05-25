@@ -1,7 +1,6 @@
 use crate::id::NodeId;
 use crate::{contact::ContactRef, msg::recv::Response, table::RoutingTable};
 use std::net::SocketAddr;
-use tokio::net::UdpSocket;
 
 mod announce;
 mod bootstrap;
@@ -16,34 +15,33 @@ pub use ping::DhtPing;
 
 use super::rpc::RpcMgr;
 
-pub enum DhtTraversal {
-    GetPeers(DhtGetPeers),
-    Bootstrap(DhtBootstrap),
-    Announce(DhtAnnounce),
-    Ping(DhtPing),
+pub enum DhtTraversal<'a> {
+    GetPeers(DhtGetPeers<'a>),
+    Bootstrap(DhtBootstrap<'a>),
+    Announce(DhtAnnounce<'a>),
+    Ping(DhtPing<'a>),
 }
 
-impl DhtTraversal {
+impl<'a> DhtTraversal<'a> {
     pub async fn add_requests(
         &mut self,
         rpc: &mut RpcMgr,
-        udp: &UdpSocket,
         buf: &mut Vec<u8>,
         traversal_id: usize,
     ) -> bool {
         match self {
-            DhtTraversal::GetPeers(x) => x.add_requests(rpc, udp, buf, traversal_id).await,
-            DhtTraversal::Bootstrap(x) => x.add_requests(rpc, udp, buf, traversal_id).await,
-            DhtTraversal::Announce(x) => x.add_requests(rpc, udp, buf, traversal_id).await,
-            DhtTraversal::Ping(x) => x.add_requests(rpc, udp, buf).await,
+            DhtTraversal::GetPeers(x) => x.add_requests(rpc, buf, traversal_id).await,
+            DhtTraversal::Bootstrap(x) => x.add_requests(rpc, buf, traversal_id).await,
+            DhtTraversal::Announce(x) => x.add_requests(rpc, buf, traversal_id).await,
+            DhtTraversal::Ping(x) => x.add_requests(rpc, buf).await,
         }
     }
 
-    pub fn failed(&mut self, id: &NodeId) {
+    pub fn failed(&mut self, id: &NodeId, addr: &SocketAddr) {
         match self {
-            DhtTraversal::GetPeers(x) => x.failed(id),
-            DhtTraversal::Bootstrap(x) => x.failed(id),
-            DhtTraversal::Announce(x) => x.failed(id),
+            DhtTraversal::GetPeers(x) => x.failed(id, addr),
+            DhtTraversal::Bootstrap(x) => x.failed(id, addr),
+            DhtTraversal::Announce(x) => x.failed(id, addr),
             DhtTraversal::Ping(x) => x.failed(id),
         }
     }

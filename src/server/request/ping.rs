@@ -10,14 +10,15 @@ use ben::Encode;
 use std::net::SocketAddr;
 use tokio::net::UdpSocket;
 
-pub struct DhtPing {
+pub struct DhtPing<'a> {
     node: DhtNode,
     txn_id: TxnId,
     done: bool,
+    udp: &'a UdpSocket,
 }
 
-impl DhtPing {
-    pub fn new(id: &NodeId, addr: &SocketAddr) -> Self {
+impl<'a> DhtPing<'a> {
+    pub fn new(id: &NodeId, addr: &SocketAddr, udp: &'a UdpSocket) -> Self {
         Self {
             node: DhtNode {
                 id: *id,
@@ -26,6 +27,7 @@ impl DhtPing {
             },
             txn_id: TxnId(0),
             done: false,
+            udp,
         }
     }
 
@@ -59,12 +61,7 @@ impl DhtPing {
         self.done = true;
     }
 
-    pub async fn add_requests(
-        &mut self,
-        rpc: &mut RpcMgr,
-        udp: &UdpSocket,
-        buf: &mut Vec<u8>,
-    ) -> bool {
+    pub async fn add_requests(&mut self, rpc: &mut RpcMgr, buf: &mut Vec<u8>) -> bool {
         log::trace!("Invoke PING request");
         if self.done {
             return true;
@@ -78,7 +75,7 @@ impl DhtPing {
         buf.clear();
         msg.encode(buf);
 
-        match udp.send_to(&buf, &self.node.addr).await {
+        match self.udp.send_to(&buf, &self.node.addr).await {
             Ok(_) => {
                 self.node.status.insert(Status::QUERIED);
                 self.txn_id = msg.txn_id;

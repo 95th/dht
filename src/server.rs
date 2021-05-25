@@ -124,7 +124,7 @@ impl DhtServer {
             select! {
                 // Clear timed-out transactions
                 _ = prune_txn.tick().fuse() => {
-                    rpc.check_timed_out_txns(table, running, udp, send_buf).await;
+                    rpc.check_timed_out_txns(table, running, send_buf).await;
                 }
 
                 // Refresh table buckets
@@ -155,7 +155,7 @@ impl DhtServer {
                         }
                     };
 
-                   rpc.handle_response(msg, addr, table, udp, running, send_buf).await;
+                   rpc.handle_response(msg, addr, table, running, send_buf).await;
                 },
 
                 // Send requests
@@ -169,25 +169,25 @@ impl DhtServer {
 
                     let traversal_id = match request {
                         ClientRequest::GetPeers { info_hash, peer_tx } => {
-                            let x = DhtGetPeers::new(&info_hash, table, peer_tx);
+                            let x = DhtGetPeers::new(&info_hash, table, peer_tx, udp);
                             running.insert(DhtTraversal::GetPeers(x))
                         },
                         ClientRequest::BootStrap { target } => {
-                            let x = DhtBootstrap::new(&target, table);
+                            let x = DhtBootstrap::new(&target, table, udp);
                             running.insert(DhtTraversal::Bootstrap(x))
                         },
                         ClientRequest::Announce { info_hash, peer_tx } => {
-                            let x = DhtAnnounce::new(&info_hash, table, peer_tx);
+                            let x = DhtAnnounce::new(&info_hash, table, peer_tx, udp);
                             running.insert(DhtTraversal::Announce(x))
                         }
                         ClientRequest::Ping { id, addr } => {
-                            let x = DhtPing::new(&id, &addr);
+                            let x = DhtPing::new(&id, &addr, udp);
                             running.insert(DhtTraversal::Ping(x))
                         }
                     };
 
                     let t = &mut running[traversal_id];
-                    let done = t.add_requests(rpc, udp, send_buf, traversal_id).await;
+                    let done = t.add_requests(rpc, send_buf, traversal_id).await;
                     if done {
                         running.remove(traversal_id);
                     }
