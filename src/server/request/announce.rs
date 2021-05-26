@@ -1,11 +1,11 @@
 use ben::Encode;
-use futures::channel::oneshot;
 
 use crate::bucket::Bucket;
 use crate::id::NodeId;
 use crate::msg::recv::Response;
 use crate::msg::send::AnnouncePeer;
 use crate::server::request::Status;
+use crate::server::PeerSender;
 use crate::server::RpcMgr;
 use crate::table::RoutingTable;
 use std::net::SocketAddr;
@@ -20,11 +20,11 @@ impl DhtAnnounce {
     pub fn new(
         info_hash: &NodeId,
         table: &mut RoutingTable,
-        peer_tx: oneshot::Sender<Vec<SocketAddr>>,
+        sender: PeerSender,
         traversal_id: usize,
     ) -> Self {
         Self {
-            inner: DhtGetPeers::new(info_hash, table, peer_tx, traversal_id),
+            inner: DhtGetPeers::new(info_hash, table, sender, traversal_id),
         }
     }
 

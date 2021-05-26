@@ -13,6 +13,7 @@ use futures::{
 use rpc::RpcMgr;
 use slab::Slab;
 use std::{
+    collections::HashSet,
     net::{Ipv6Addr, SocketAddr},
     time::Duration,
 };
@@ -21,14 +22,16 @@ use tokio::{net::UdpSocket, time};
 mod request;
 mod rpc;
 
+pub type PeerSender = oneshot::Sender<HashSet<SocketAddr>>;
+
 pub enum ClientRequest {
     Announce {
         info_hash: NodeId,
-        peer_tx: oneshot::Sender<Vec<SocketAddr>>,
+        sender: PeerSender,
     },
     GetPeers {
         info_hash: NodeId,
-        peer_tx: oneshot::Sender<Vec<SocketAddr>>,
+        sender: PeerSender,
     },
     Ping {
         id: NodeId,
@@ -57,24 +60,24 @@ impl Dht {
         Self { tx }
     }
 
-    pub async fn get_peers(&mut self, info_hash: NodeId) -> anyhow::Result<Vec<SocketAddr>> {
+    pub async fn get_peers(&mut self, info_hash: NodeId) -> anyhow::Result<HashSet<SocketAddr>> {
         let (tx, rx) = oneshot::channel();
         self.tx
             .send(ClientRequest::GetPeers {
                 info_hash,
-                peer_tx: tx,
+                sender: tx,
             })
             .await?;
 
         Ok(rx.await?)
     }
 
-    pub async fn announce(&mut self, info_hash: NodeId) -> anyhow::Result<Vec<SocketAddr>> {
+    pub async fn announce(&mut self, info_hash: NodeId) -> anyhow::Result<HashSet<SocketAddr>> {
         let (tx, rx) = oneshot::channel();
         self.tx
             .send(ClientRequest::Announce {
                 info_hash,
-                peer_tx: tx,
+                sender: tx,
             })
             .await?;
 
@@ -168,16 +171,16 @@ impl DhtServer {
 
                     let entry = running.vacant_entry();
                     let mut t = match request {
-                        ClientRequest::GetPeers { info_hash, peer_tx } => {
-                            let t = DhtGetPeers::new(&info_hash, table, peer_tx, entry.key());
+                        ClientRequest::GetPeers { info_hash, sender } => {
+                            let t = DhtGetPeers::new(&info_hash, table, sender, entry.key());
                             DhtTraversal::GetPeers(t)
                         },
                         ClientRequest::Bootstrap { target } => {
                             let t = DhtBootstrap::new(&target, table, entry.key());
                             DhtTraversal::Bootstrap(t)
                         },
-                        ClientRequest::Announce { info_hash, peer_tx } => {
-                            let t = DhtAnnounce::new(&info_hash, table, peer_tx, entry.key());
+                        ClientRequest::Announce { info_hash, sender } => {
+                            let t = DhtAnnounce::new(&info_hash, table, sender, entry.key());
                             DhtTraversal::Announce(t)
                         }
                         ClientRequest::Ping { id, addr } => {

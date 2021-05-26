@@ -1,10 +1,10 @@
 use crate::id::NodeId;
 use crate::msg::recv::Response;
 use crate::msg::send::GetPeers;
+use crate::server::PeerSender;
 use crate::server::RpcMgr;
 use crate::table::RoutingTable;
 use ben::{Decoder, Encode};
-use futures::channel::oneshot;
 use std::collections::HashSet;
 use std::net::SocketAddr;
 
@@ -13,20 +13,20 @@ use super::traversal::Traversal;
 pub struct DhtGetPeers {
     pub traversal: Traversal,
     peers: HashSet<SocketAddr>,
-    peer_tx: oneshot::Sender<Vec<SocketAddr>>,
+    sender: PeerSender,
 }
 
 impl DhtGetPeers {
     pub fn new(
         info_hash: &NodeId,
         table: &RoutingTable,
-        peer_tx: oneshot::Sender<Vec<SocketAddr>>,
+        sender: PeerSender,
         traversal_id: usize,
     ) -> Self {
         Self {
             traversal: Traversal::new(info_hash, table, traversal_id),
             peers: HashSet::new(),
-            peer_tx,
+            sender,
         }
     }
 
@@ -76,7 +76,7 @@ impl DhtGetPeers {
     }
 
     pub fn done(self) {
-        self.peer_tx.send(self.peers.into_iter().collect()).unwrap()
+        self.sender.send(self.peers).unwrap()
     }
 }
 
