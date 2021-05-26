@@ -47,17 +47,16 @@ pub struct Dht {
 }
 
 impl Dht {
-    pub fn new(port: u16, router_nodes: Vec<SocketAddr>) -> Self {
+    pub fn new(port: u16, router_nodes: Vec<SocketAddr>) -> (Self, DhtServer) {
         let (tx, rx) = mpsc::channel::<ClientRequest>(200);
-        let dht = DhtServer {
+        let server = DhtServer {
             port,
             router_nodes,
             tx: tx.clone(),
             rx,
         };
 
-        tokio::spawn(dht.run());
-        Self { tx }
+        (Self { tx }, server)
     }
 
     pub async fn get_peers(&mut self, info_hash: NodeId) -> anyhow::Result<HashSet<SocketAddr>> {
@@ -85,7 +84,7 @@ impl Dht {
     }
 }
 
-struct DhtServer {
+pub struct DhtServer {
     port: u16,
     router_nodes: Vec<SocketAddr>,
     tx: mpsc::Sender<ClientRequest>,
@@ -93,7 +92,7 @@ struct DhtServer {
 }
 
 impl DhtServer {
-    async fn run(self) {
+    pub async fn run(self) {
         let udp = match UdpSocket::bind((Ipv6Addr::UNSPECIFIED, self.port)).await {
             Ok(x) => x,
             Err(e) => {
